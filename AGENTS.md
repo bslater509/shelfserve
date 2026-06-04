@@ -90,6 +90,8 @@ docker run --rm `
 
 Open the local container at `http://127.0.0.1:8099/`. This local Docker mode does not simulate the generated Home Assistant ingress path, so continue to verify ingress-sensitive URL, static, media, and CSRF changes through Home Assistant before handing them off.
 
+When local Docker development is requested or already active, keep the `shelfserve-dev` container running at the end of the task unless the user explicitly asks to stop it. After code, template, static asset, dependency, Dockerfile, or startup-script changes that should be reflected in the local server, rebuild `shelfserve:dev`, recreate `shelfserve-dev`, and verify `http://127.0.0.1:8099/` returns HTTP 200 before handing off. If only docs, CI, or Home Assistant metadata changed, leave the running local container as-is and say that no server refresh was needed.
+
 For add-on container behavior, inspect `recipe_planner/run.sh`. It runs:
 
 ```sh
