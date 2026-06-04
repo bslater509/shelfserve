@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.12
+
+- Add dynamic autocomplete suggestions for ingredient names and aisles in recipe creation/edit forms.
+- Implement interactive AJAX toggling for shopping list items with optimistic updates.
+- Support adding custom one-off items directly to any shopping list, grouped into their correct supermarket aisle.
+
 ## 0.1.11
 
 - Add new premium glow-morphic style logo and icon for ShelfServe server and Home Assistant add-on dashboard.

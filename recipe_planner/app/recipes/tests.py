@@ -14,6 +14,7 @@ from .models import (
     MealPlanEntry,
     Recipe,
     RecipeIngredient,
+    ShoppingList,
     ShoppingListItem,
     Supermarket,
     SupermarketSection,
@@ -445,3 +446,66 @@ class RecipePlannerTests(TestCase):
         asda_list = build_shopping_list(asda, entry.date, MealPlanEntry.objects.filter(pk=entry.pk))
         self.assertEqual(asda_list.items.first().section_name, "Bakery")
         self.assertEqual(ShoppingListItem.objects.filter(shopping_list=asda_list).count(), 3)
+
+    def test_toggle_shopping_item_ajax(self):
+        supermarket = Supermarket.objects.create(name="Tesco")
+        shopping_list = ShoppingList.objects.create(supermarket=supermarket, week_start=date(2026, 6, 1))
+        item = ShoppingListItem.objects.create(
+            shopping_list=shopping_list,
+            section_name="Bakery",
+            ingredient_name="Bread",
+            quantity=Decimal("1"),
+            unit=Unit.ITEM,
+            checked=False
+        )
+
+        response = self.client.post(
+            reverse("toggle_shopping_item", args=[item.pk]),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"id": item.pk, "checked": True})
+        
+        item.refresh_from_db()
+        self.assertTrue(item.checked)
+
+    def test_add_custom_shopping_item(self):
+        supermarket = Supermarket.objects.create(name="Tesco")
+        SupermarketSection.objects.create(supermarket=supermarket, name="Bakery", order=0)
+        SupermarketSection.objects.create(supermarket=supermarket, name="Dairy", order=1)
+        shopping_list = ShoppingList.objects.create(supermarket=supermarket, week_start=date(2026, 6, 1))
+
+        # Test adding custom item in an existing section ("Dairy")
+        response = self.client.post(
+            reverse("add_shopping_item", args=[shopping_list.pk]),
+            {
+                "ingredient_name": "Milk",
+                "quantity": "2",
+                "unit": Unit.LITRE,
+                "section_name": "Dairy",
+                "notes": "Organic"
+            }
+        )
+        self.assertRedirects(response, reverse("shopping_list_detail", args=[shopping_list.pk]))
+        
+        item = ShoppingListItem.objects.get(shopping_list=shopping_list, ingredient_name="Milk")
+        self.assertEqual(item.quantity, Decimal("2.00"))
+        self.assertEqual(item.unit, Unit.LITRE)
+        self.assertEqual(item.section_name, "Dairy")
+        self.assertEqual(item.section_order, 1)
+        self.assertEqual(item.notes, "Organic")
+
+        # Test adding custom item in a non-existent section
+        self.client.post(
+            reverse("add_shopping_item", args=[shopping_list.pk]),
+            {
+                "ingredient_name": "Paper towels",
+                "quantity": "1",
+                "unit": Unit.ITEM,
+                "section_name": "Household",
+                "notes": ""
+            }
+        )
+        item2 = ShoppingListItem.objects.get(shopping_list=shopping_list, ingredient_name="Paper towels")
+        self.assertEqual(item2.section_name, "Household")
+        self.assertEqual(item2.section_order, 9999)

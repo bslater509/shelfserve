@@ -10,6 +10,8 @@
   <a class="button" href="{% url 'planner' %}?week={{ shopping_list.week_start|date:'Y-m-d' }}">Planner</a>
 </section>
 
+<div id="ajax-toast" class="message error toast-error" style="display: none; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.15);"></div>
+
 {% for section, items in grouped_items %}
   <section class="panel shopping-section">
     <h2>{{ section }}</h2>
@@ -30,4 +32,122 @@
 {% empty %}
   <p class="empty">No items on this list.</p>
 {% endfor %}
+
+<section class="panel shopping-section">
+  <h2>Add custom item</h2>
+  <form method="post" action="{% url 'add_shopping_item' shopping_list.pk %}" class="custom-item-form">
+    {% csrf_token %}
+    <div class="custom-item-inputs">
+      <div class="form-group">
+        <label for="custom_name">Name</label>
+        <input id="custom_name" name="ingredient_name" required placeholder="e.g. Coffee" list="ingredient-names-datalist">
+      </div>
+      <div class="form-group small">
+        <label for="custom_qty">Qty</label>
+        <input id="custom_qty" name="quantity" type="number" min="0.01" step="0.01" value="1" required>
+      </div>
+      <div class="form-group medium">
+        <label for="custom_unit">Unit</label>
+        <select id="custom_unit" name="unit">
+          {% for value,label in units %}
+            <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="custom_category">Aisle</label>
+        <input id="custom_category" name="section_name" placeholder="e.g. Drinks" list="ingredient-categories-datalist">
+      </div>
+      <div class="form-group notes">
+        <label for="custom_notes">Notes</label>
+        <input id="custom_notes" name="notes" placeholder="Optional notes (e.g. beans)">
+      </div>
+    </div>
+    <div class="custom-item-actions">
+      <button class="button primary" type="submit">Add to list</button>
+    </div>
+  </form>
+</section>
+
+<datalist id="ingredient-names-datalist">
+  {% for suggested_ingredient in suggested_ingredients %}
+    <option value="{{ suggested_ingredient }}">
+  {% endfor %}
+</datalist>
+
+<datalist id="ingredient-categories-datalist">
+  {% for suggested_category in suggested_categories %}
+    <option value="{{ suggested_category }}">
+  {% endfor %}
+</datalist>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const listContainer = document.body;
+    const toast = document.getElementById("ajax-toast");
+    let toastTimeout;
+
+    function showToast(message) {
+      toast.textContent = message || "Failed to update item status. Please try again.";
+      toast.style.display = "block";
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        toast.style.display = "none";
+      }, 4500);
+    }
+
+    listContainer.addEventListener("submit", (event) => {
+      const form = event.target;
+      if (!form.action || !form.action.includes("/toggle/")) {
+        return;
+      }
+
+      event.preventDefault();
+
+      const button = form.querySelector(".check-button");
+      const li = form.closest("li");
+      const isChecked = li.classList.contains("checked");
+
+      // Optimistic UI update
+      li.classList.toggle("checked");
+      button.innerHTML = isChecked ? "" : "&#10003;";
+
+      const csrfToken = form.querySelector("[name=csrfmiddlewaretoken]").value;
+      fetch(form.action, {
+        method: "POST",
+        headers: {
+          "X-CSRFToken": csrfToken,
+          "X-Requested-With": "XMLHttpRequest",
+          "Accept": "application/json"
+        }
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error("HTTP error " + response.status);
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data.checked) {
+          li.classList.add("checked");
+          button.innerHTML = "&#10003;";
+        } else {
+          li.classList.remove("checked");
+          button.innerHTML = "";
+        }
+      })
+      .catch(error => {
+        console.error("AJAX toggle failed:", error);
+        showToast("Network error: failed to update item status.");
+        if (isChecked) {
+          li.classList.add("checked");
+          button.innerHTML = "&#10003;";
+        } else {
+          li.classList.remove("checked");
+          button.innerHTML = "";
+        }
+      });
+    });
+  });
+</script>
 {% endblock %}

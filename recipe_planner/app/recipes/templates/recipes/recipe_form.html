@@ -27,27 +27,27 @@
       </div>
       {% for item in ingredients %}
         <div class="ingredient-row">
-          <input name="ingredient_name" value="{{ item.ingredient.name }}" required>
+          <input name="ingredient_name" value="{{ item.ingredient.name }}" required list="ingredient-names-datalist">
           <input name="ingredient_quantity" value="{{ item.quantity }}" type="number" min="0.01" step="0.01" required>
           <select name="ingredient_unit">
             {% for value,label in units %}
               <option value="{{ value }}" {% if item.unit == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
-          <input name="ingredient_category" value="{{ item.ingredient.category }}" placeholder="Aisle">
+          <input name="ingredient_category" value="{{ item.ingredient.category }}" placeholder="Aisle" list="ingredient-categories-datalist">
           <input name="ingredient_note" value="{{ item.note }}" placeholder="Optional">
           <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
         </div>
       {% empty %}
         <div class="ingredient-row">
-          <input name="ingredient_name" required>
+          <input name="ingredient_name" required list="ingredient-names-datalist">
           <input name="ingredient_quantity" type="number" min="0.01" step="0.01" required>
           <select name="ingredient_unit">
             {% for value,label in units %}
               <option value="{{ value }}">{{ label }}</option>
             {% endfor %}
           </select>
-          <input name="ingredient_category" placeholder="Aisle">
+          <input name="ingredient_category" placeholder="Aisle" list="ingredient-categories-datalist">
           <input name="ingredient_note" placeholder="Optional">
           <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
         </div>
@@ -63,18 +63,30 @@
 
 <template id="ingredient-template">
   <div class="ingredient-row">
-    <input name="ingredient_name" required>
+    <input name="ingredient_name" required list="ingredient-names-datalist">
     <input name="ingredient_quantity" type="number" min="0.01" step="0.01" required>
     <select name="ingredient_unit">
       {% for value,label in units %}
         <option value="{{ value }}">{{ label }}</option>
       {% endfor %}
     </select>
-    <input name="ingredient_category" placeholder="Aisle">
+    <input name="ingredient_category" placeholder="Aisle" list="ingredient-categories-datalist">
     <input name="ingredient_note" placeholder="Optional">
     <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
   </div>
 </template>
+
+<datalist id="ingredient-names-datalist">
+  {% for suggested_ingredient in suggested_ingredients %}
+    <option value="{{ suggested_ingredient }}">
+  {% endfor %}
+</datalist>
+
+<datalist id="ingredient-categories-datalist">
+  {% for suggested_category in suggested_categories %}
+    <option value="{{ suggested_category }}">
+  {% endfor %}
+</datalist>
 
 <script>
   const rows = document.querySelector("[data-ingredient-rows]");

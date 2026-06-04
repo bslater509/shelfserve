@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation
 from django.contrib import messages
 from django.db import transaction
 from django.db.models import Q
-from django.http import HttpResponseBadRequest, HttpResponseRedirect
+from django.http import HttpResponseBadRequest, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -80,6 +80,8 @@ def recipe_edit(request, pk=None):
             form.fields["tags_text"].initial = ", ".join(recipe.tags.values_list("name", flat=True))
 
     ingredients = list(recipe.ingredients.select_related("ingredient")) if recipe else []
+    suggested_ingredients = list(Ingredient.objects.values_list("name", flat=True).distinct().order_by("name"))
+    suggested_categories = list(Ingredient.objects.exclude(category="").values_list("category", flat=True).distinct().order_by("category"))
     return render(
         request,
         "recipes/recipe_form.html",
@@ -88,6 +90,8 @@ def recipe_edit(request, pk=None):
             "recipe": recipe,
             "ingredients": ingredients,
             "units": Unit.choices,
+            "suggested_ingredients": suggested_ingredients,
+            "suggested_categories": suggested_categories,
         },
     )
 
@@ -166,10 +170,24 @@ def shopping_list_detail(request, pk):
             current_section = item.section_name
             grouped_items.append((current_section, []))
         grouped_items[-1][1].append(item)
+
+    suggested_ingredients = list(Ingredient.objects.values_list("name", flat=True).distinct().order_by("name"))
+    # Suggest supermarket-specific sections if any exist
+    supermarket_sections = list(shopping_list.supermarket.sections.values_list("name", flat=True).order_by("order", "name"))
+    # Merge with general ingredient categories
+    ingredient_categories = list(Ingredient.objects.exclude(category="").values_list("category", flat=True).distinct())
+    suggested_categories = sorted(list(set(supermarket_sections + ingredient_categories)))
+
     return render(
         request,
         "recipes/shopping_list_detail.html",
-        {"shopping_list": shopping_list, "grouped_items": grouped_items},
+        {
+            "shopping_list": shopping_list,
+            "grouped_items": grouped_items,
+            "units": Unit.choices,
+            "suggested_ingredients": suggested_ingredients,
+            "suggested_categories": suggested_categories,
+        },
     )
 
 
@@ -178,7 +196,51 @@ def toggle_shopping_item(request, pk):
     item = get_object_or_404(ShoppingListItem, pk=pk)
     item.checked = not item.checked
     item.save(update_fields=["checked"])
+    if request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", ""):
+        return JsonResponse({"id": item.pk, "checked": item.checked})
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", reverse("shopping_list_detail", args=[item.shopping_list_id])))
+
+
+@require_POST
+def add_shopping_item(request, pk):
+    shopping_list = get_object_or_404(ShoppingList, pk=pk)
+    ingredient_name = normalise_name(request.POST.get("ingredient_name", ""))
+    if not ingredient_name:
+        messages.error(request, "Ingredient name is required.")
+        return redirect("shopping_list_detail", pk=pk)
+
+    quantity_str = request.POST.get("quantity", "1")
+    try:
+        quantity = Decimal(quantity_str)
+    except (InvalidOperation, ValueError):
+        quantity = Decimal("1")
+
+    unit = request.POST.get("unit", Unit.ITEM)
+    if unit not in Unit.values:
+        unit = Unit.ITEM
+
+    section_name = normalise_name(request.POST.get("section_name", "Uncategorised")) or "Uncategorised"
+
+    # Find section order
+    supermarket = shopping_list.supermarket
+    section = SupermarketSection.objects.filter(
+        supermarket=supermarket,
+        name__iexact=section_name
+    ).first()
+
+    section_order = section.order if section else 9999
+
+    ShoppingListItem.objects.create(
+        shopping_list=shopping_list,
+        ingredient_name=ingredient_name,
+        quantity=quantity,
+        unit=unit,
+        section_name=section_name,
+        section_order=section_order,
+        notes=request.POST.get("notes", "").strip()
+    )
+    messages.success(request, f"Added {ingredient_name} to shopping list.")
+    return redirect("shopping_list_detail", pk=pk)
 
 
 def supermarket_list(request):

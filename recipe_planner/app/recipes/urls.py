@@ -12,6 +12,7 @@ urlpatterns = [
     path("planner/", views.planner, name="planner"),
     path("shopping/generate/", views.generate_shopping_list, name="generate_shopping_list"),
     path("shopping/<int:pk>/", views.shopping_list_detail, name="shopping_list_detail"),
+    path("shopping/<int:pk>/add-item/", views.add_shopping_item, name="add_shopping_item"),
     path("shopping/items/<int:pk>/toggle/", views.toggle_shopping_item, name="toggle_shopping_item"),
     path("supermarkets/", views.supermarket_list, name="supermarket_list"),
     path("supermarkets/<int:pk>/", views.supermarket_detail, name="supermarket_detail"),
