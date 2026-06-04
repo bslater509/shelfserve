@@ -1,0 +1,23 @@
+name: ShelfServe
+version: "0.1.0"
+slug: shelfserve
+description: Recipe storage, meal planning, and supermarket-sorted shopping lists.
+url: https://github.com/bslater509/shelfserve
+arch:
+  - amd64
+  - aarch64
+startup: services
+boot: auto
+init: false
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:food-variant
+panel_title: ShelfServe
+homeassistant_api: false
+map:
+  - type: data
+    read_only: false
+options:
+  log_level: info
+schema:
+  log_level: list(trace|debug|info|notice|warning|error|fatal)?

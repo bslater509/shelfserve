@@ -1,0 +1,33 @@
+{% extends "recipes/base.html" %}
+{% load recipe_extras %}
+{% block title %}Shopping list - ShelfServe{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>{{ shopping_list.supermarket.name }}</h1>
+    <p class="muted">Week starting {{ shopping_list.week_start|date:"D j M Y" }}</p>
+  </div>
+  <a class="button" href="{% url 'planner' %}?week={{ shopping_list.week_start|date:'Y-m-d' }}">Planner</a>
+</section>
+
+{% for section, items in grouped_items %}
+  <section class="panel shopping-section">
+    <h2>{{ section }}</h2>
+    <ul class="shopping-items">
+      {% for item in items %}
+        <li class="{% if item.checked %}checked{% endif %}">
+          <form method="post" action="{% url 'toggle_shopping_item' item.pk %}">
+            {% csrf_token %}
+            <button class="check-button" type="submit" aria-label="Toggle item">{% if item.checked %}&#10003;{% endif %}</button>
+          </form>
+          <span class="amount">{{ item.quantity|quantity }} {{ item.unit }}</span>
+          <span class="item-name">{{ item.ingredient_name }}</span>
+          {% if item.notes %}<span class="muted">{{ item.notes }}</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+{% empty %}
+  <p class="empty">No items on this list.</p>
+{% endfor %}
+{% endblock %}

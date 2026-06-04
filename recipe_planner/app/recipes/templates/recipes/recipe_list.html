@@ -1,0 +1,39 @@
+{% extends "recipes/base.html" %}
+{% block title %}Recipes - ShelfServe{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Recipes</h1>
+    <form class="search" method="get">
+      <input type="search" name="q" value="{{ query }}" placeholder="Search recipes">
+      <button class="button" type="submit">Search</button>
+    </form>
+  </div>
+  <a class="button primary" href="{% url 'recipe_create' %}">New recipe</a>
+</section>
+
+<section class="cards">
+  {% for recipe in recipes %}
+    <article class="recipe-card">
+      <a href="{{ recipe.get_absolute_url }}">
+        {% if recipe.image %}
+          <img src="{{ recipe.image.url }}" alt="">
+        {% else %}
+          <div class="image-placeholder">{{ recipe.title|first }}</div>
+        {% endif %}
+        <div class="recipe-card-body">
+          <h2>{{ recipe.title }}</h2>
+          <p>{{ recipe.servings }} servings</p>
+          <div class="tags">
+            {% for tag in recipe.tags.all %}
+              <span>{{ tag.name }}</span>
+            {% endfor %}
+          </div>
+        </div>
+      </a>
+    </article>
+  {% empty %}
+    <p class="empty">No recipes found.</p>
+  {% endfor %}
+</section>
+{% endblock %}

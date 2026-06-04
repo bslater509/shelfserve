@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+db.sqlite3
+data/
+recipe_planner/app/data/
+recipe_planner/app/staticfiles/
+recipe_planner/app/media/
+.coverage
+htmlcov/
+

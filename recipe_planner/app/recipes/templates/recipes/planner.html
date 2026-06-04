@@ -1,0 +1,63 @@
+{% extends "recipes/base.html" %}
+{% load recipe_extras %}
+{% block title %}Planner - ShelfServe{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Planner</h1>
+    <p class="muted">{{ week_start|date:"j M Y" }} - {{ days.6|date:"j M Y" }}</p>
+  </div>
+  <div class="actions">
+    <a class="button" href="{% url 'planner' %}?week={{ previous_week|date:'Y-m-d' }}">Previous</a>
+    <a class="button" href="{% url 'planner' %}?week={{ next_week|date:'Y-m-d' }}">Next</a>
+  </div>
+</section>
+
+<form method="post" class="planner-form">
+  {% csrf_token %}
+  <div class="planner-grid">
+    <div class="planner-head"></div>
+    {% for slot,label in meal_slots %}
+      <div class="planner-head">{{ label }}</div>
+    {% endfor %}
+    {% for day in days %}
+      <div class="day-label">
+        <strong>{{ day|date:"D" }}</strong>
+        <span>{{ day|date:"j M" }}</span>
+      </div>
+      {% for slot,label in meal_slots %}
+        {% plan_key day slot as key %}
+        {% with entry=entries|get_item:key %}
+          <div class="meal-cell">
+            <select name="recipe_{{ day|date:'Y-m-d' }}_{{ slot }}">
+              <option value="">None</option>
+              {% for recipe in recipes %}
+                <option value="{{ recipe.pk }}" {% if entry and entry.recipe_id == recipe.pk %}selected{% endif %}>{{ recipe.title }}</option>
+              {% endfor %}
+            </select>
+            <input name="servings_{{ day|date:'Y-m-d' }}_{{ slot }}" type="number" min="1" value="{% if entry %}{{ entry.servings }}{% else %}1{% endif %}" aria-label="Servings">
+          </div>
+        {% endwith %}
+      {% endfor %}
+    {% endfor %}
+  </div>
+  <div class="actions">
+    <button class="button primary" type="submit">Save planner</button>
+  </div>
+</form>
+
+<section class="panel">
+  <h2>Shopping list</h2>
+  <form method="post" action="{% url 'generate_shopping_list' %}" class="inline-form">
+    {% csrf_token %}
+    <input type="hidden" name="week_start" value="{{ week_start|date:'Y-m-d' }}">
+    <select name="supermarket" required>
+      <option value="">Choose supermarket</option>
+      {% for supermarket in supermarkets %}
+        <option value="{{ supermarket.pk }}">{{ supermarket.name }}</option>
+      {% endfor %}
+    </select>
+    <button class="button" type="submit">Generate</button>
+  </form>
+</section>
+{% endblock %}

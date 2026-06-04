@@ -1,0 +1,36 @@
+{% extends "recipes/base.html" %}
+{% load recipe_extras %}
+{% block title %}{{ recipe.title }} - ShelfServe{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>{{ recipe.title }}</h1>
+    <p class="muted">{{ recipe.servings }} servings</p>
+  </div>
+  <a class="button" href="{% url 'recipe_edit' recipe.pk %}">Edit</a>
+</section>
+
+{% if recipe.image %}
+  <img class="hero-image" src="{{ recipe.image.url }}" alt="">
+{% endif %}
+
+<section class="grid two">
+  <article class="panel">
+    <h2>Ingredients</h2>
+    <ul class="ingredient-list">
+      {% for item in recipe.ingredients.all %}
+        <li>
+          <strong>{{ item.quantity|quantity }} {{ item.unit }}</strong>
+          <span>{{ item.ingredient.name }}</span>
+          {% if item.note %}<em>{{ item.note }}</em>{% endif %}
+          {% if item.ingredient.category %}<small>{{ item.ingredient.category }}</small>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </article>
+  <article class="panel">
+    <h2>Steps</h2>
+    <div class="prose">{{ recipe.steps|linebreaks }}</div>
+  </article>
+</section>
+{% endblock %}

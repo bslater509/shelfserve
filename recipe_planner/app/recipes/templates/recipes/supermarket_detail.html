@@ -1,0 +1,16 @@
+{% extends "recipes/base.html" %}
+{% block title %}{{ supermarket.name }} - ShelfServe{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <h1>{{ supermarket.name }}</h1>
+  <a class="button" href="{% url 'supermarket_list' %}">All supermarkets</a>
+</section>
+
+<form method="post" class="panel form-panel">
+  {% csrf_token %}
+  <label>Aisle order
+    <textarea name="sections" rows="14">{{ section_text }}</textarea>
+  </label>
+  <button class="button primary" type="submit">Save aisle order</button>
+</form>
+{% endblock %}

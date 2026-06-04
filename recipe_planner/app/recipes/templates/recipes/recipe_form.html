@@ -1,0 +1,92 @@
+{% extends "recipes/base.html" %}
+{% block title %}{% if recipe %}Edit{% else %}New{% endif %} recipe - ShelfServe{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <h1>{% if recipe %}Edit recipe{% else %}New recipe{% endif %}</h1>
+</section>
+
+<form method="post" enctype="multipart/form-data" class="form-layout">
+  {% csrf_token %}
+  <section class="panel form-panel">
+    {{ form.non_field_errors }}
+    <label>Title {{ form.title }}</label>
+    <label>Image {{ form.image }}</label>
+    <label>Servings {{ form.servings }}</label>
+    <label>Tags {{ form.tags_text }}</label>
+    <label>Steps {{ form.steps }}</label>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading">
+      <h2>Ingredients</h2>
+      <button class="button" type="button" data-add-row>Add row</button>
+    </div>
+    <div class="ingredient-table" data-ingredient-rows>
+      <div class="ingredient-row header">
+        <span>Ingredient</span><span>Qty</span><span>Unit</span><span>Section</span><span>Note</span><span></span>
+      </div>
+      {% for item in ingredients %}
+        <div class="ingredient-row">
+          <input name="ingredient_name" value="{{ item.ingredient.name }}" required>
+          <input name="ingredient_quantity" value="{{ item.quantity }}" type="number" min="0.01" step="0.01" required>
+          <select name="ingredient_unit">
+            {% for value,label in units %}
+              <option value="{{ value }}" {% if item.unit == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <input name="ingredient_category" value="{{ item.ingredient.category }}" placeholder="Aisle">
+          <input name="ingredient_note" value="{{ item.note }}" placeholder="Optional">
+          <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
+        </div>
+      {% empty %}
+        <div class="ingredient-row">
+          <input name="ingredient_name" required>
+          <input name="ingredient_quantity" type="number" min="0.01" step="0.01" required>
+          <select name="ingredient_unit">
+            {% for value,label in units %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+          <input name="ingredient_category" placeholder="Aisle">
+          <input name="ingredient_note" placeholder="Optional">
+          <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="actions">
+    <button class="button primary" type="submit">Save recipe</button>
+    <a class="button" href="{% url 'recipe_list' %}">Cancel</a>
+  </div>
+</form>
+
+<template id="ingredient-template">
+  <div class="ingredient-row">
+    <input name="ingredient_name" required>
+    <input name="ingredient_quantity" type="number" min="0.01" step="0.01" required>
+    <select name="ingredient_unit">
+      {% for value,label in units %}
+        <option value="{{ value }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input name="ingredient_category" placeholder="Aisle">
+    <input name="ingredient_note" placeholder="Optional">
+    <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
+  </div>
+</template>
+
+<script>
+  const rows = document.querySelector("[data-ingredient-rows]");
+  const template = document.querySelector("#ingredient-template");
+  document.querySelector("[data-add-row]").addEventListener("click", () => {
+    rows.appendChild(template.content.cloneNode(true));
+  });
+  rows.addEventListener("click", (event) => {
+    if (event.target.matches("[data-remove-row]")) {
+      const row = event.target.closest(".ingredient-row");
+      if (rows.querySelectorAll(".ingredient-row:not(.header)").length > 1) row.remove();
+    }
+  });
+</script>
+{% endblock %}

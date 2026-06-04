@@ -1,0 +1,47 @@
+{% extends "recipes/base.html" %}
+{% block title %}Dashboard - ShelfServe{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="muted">Week starting {{ week_start|date:"D j M Y" }}</p>
+  </div>
+  <div class="actions">
+    <a class="button primary" href="{% url 'recipe_create' %}">New recipe</a>
+    <a class="button" href="{% url 'planner' %}">Open planner</a>
+  </div>
+</section>
+
+<section class="stats">
+  <div class="stat"><strong>{{ recipe_count }}</strong><span>Recipes</span></div>
+  <div class="stat"><strong>{{ supermarket_count }}</strong><span>Supermarkets</span></div>
+</section>
+
+<section class="grid two">
+  <article class="panel">
+    <h2>Today</h2>
+    {% if today_entries %}
+      <ul class="plain-list">
+        {% for entry in today_entries %}
+          <li><span>{{ entry.get_meal_slot_display }}</span><a href="{{ entry.recipe.get_absolute_url }}">{{ entry.recipe.title }}</a></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty">No meals planned today.</p>
+    {% endif %}
+  </article>
+
+  <article class="panel">
+    <h2>Recent lists</h2>
+    {% if recent_lists %}
+      <ul class="plain-list">
+        {% for list in recent_lists %}
+          <li><span>{{ list.week_start|date:"j M" }}</span><a href="{% url 'shopping_list_detail' list.pk %}">{{ list.supermarket.name }}</a></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty">No shopping lists yet.</p>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "recipes/base.html" %}
+{% block title %}Supermarkets - ShelfServe{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <h1>Supermarkets</h1>
+</section>
+
+<section class="grid two">
+  <form method="post" class="panel form-panel">
+    {% csrf_token %}
+    <h2>New supermarket</h2>
+    <label>Name {{ form.name }}</label>
+    <button class="button primary" type="submit">Save supermarket</button>
+  </form>
+
+  <div class="panel">
+    <h2>Saved</h2>
+    <ul class="plain-list">
+      {% for supermarket in supermarkets %}
+        <li><span>{{ supermarket.sections.count }} aisles</span><a href="{% url 'supermarket_detail' supermarket.pk %}">{{ supermarket.name }}</a></li>
+      {% empty %}
+        <li>No supermarkets yet.</li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,5 @@
+configuration:
+  log_level:
+    name: Log level
+    description: Controls add-on logging verbosity.
+
