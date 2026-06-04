@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.8
+
+- Fix Home Assistant ingress form submissions when the browser sends an opaque `Origin: null` header.
+
 ## 0.1.2
 
 - Publish prebuilt multi-architecture container images through GitHub Actions.

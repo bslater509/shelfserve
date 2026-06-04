@@ -285,6 +285,38 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], f"{ingress_path}{reverse('supermarket_detail', args=[supermarket.pk])}")
 
+    def test_supermarket_create_accepts_home_assistant_ingress_null_origin(self):
+        client = Client(enforce_csrf_checks=True)
+        ingress_path = "/api/hassio_ingress/ETrznauquxiTbiOHgkNL6KeWBz1tFwA7jC1qW_v2Xeg"
+
+        form_response = client.get(
+            reverse("supermarket_list"),
+            HTTP_HOST="192.168.0.103:8099",
+            HTTP_X_INGRESS_PATH=ingress_path,
+            HTTP_X_FORWARDED_HOST="192.168.0.94:8123",
+            HTTP_X_FORWARDED_PROTO="http",
+            HTTP_ORIGIN="null",
+        )
+        self.assertEqual(form_response.status_code, 200)
+        csrf_token = client.cookies["csrftoken"].value
+
+        response = client.post(
+            reverse("supermarket_list"),
+            {
+                "csrfmiddlewaretoken": csrf_token,
+                "name": "Tesco",
+            },
+            HTTP_HOST="192.168.0.103:8099",
+            HTTP_X_INGRESS_PATH=ingress_path,
+            HTTP_X_FORWARDED_HOST="192.168.0.94:8123",
+            HTTP_X_FORWARDED_PROTO="http",
+            HTTP_ORIGIN="null",
+        )
+
+        supermarket = Supermarket.objects.get(name="Tesco")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"{ingress_path}{reverse('supermarket_detail', args=[supermarket.pk])}")
+
     def test_csrf_failure_debug_logs_ingress_context_without_secrets(self):
         client = Client(enforce_csrf_checks=True)
         ingress_path = "/3975db7c_shelfserve"

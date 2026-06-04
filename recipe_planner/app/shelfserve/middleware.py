@@ -24,6 +24,9 @@ class IngressPathMiddleware:
             set_script_prefix(original_prefix)
 
     def _set_external_url_metadata(self, request):
+        if self._is_opaque_ingress_origin(request):
+            request.META.pop("HTTP_ORIGIN", None)
+
         source_url = request.META.get("HTTP_ORIGIN") or request.META.get("HTTP_REFERER")
         if not source_url:
             return
@@ -35,3 +38,7 @@ class IngressPathMiddleware:
         request.META["HTTP_X_FORWARDED_HOST"] = parsed_url.netloc
         request.META["HTTP_X_FORWARDED_PROTO"] = parsed_url.scheme
         request.META["wsgi.url_scheme"] = parsed_url.scheme
+
+    def _is_opaque_ingress_origin(self, request):
+        origin = request.META.get("HTTP_ORIGIN", "")
+        return request.META.get("HTTP_X_INGRESS_PATH") and origin.lower() == "null"
