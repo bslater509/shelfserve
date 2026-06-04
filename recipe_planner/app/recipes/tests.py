@@ -71,6 +71,8 @@ class RecipePlannerTests(TestCase):
             reverse("recipe_create"),
             HTTP_HOST="192.168.0.103:8099",
             HTTP_X_INGRESS_PATH=ingress_path,
+            HTTP_X_FORWARDED_HOST="192.168.0.103:8099",
+            HTTP_X_FORWARDED_PROTO="http",
             HTTP_ORIGIN=origin,
         )
         self.assertEqual(form_response.status_code, 200)
@@ -92,11 +94,46 @@ class RecipePlannerTests(TestCase):
             },
             HTTP_HOST="192.168.0.103:8099",
             HTTP_X_INGRESS_PATH=ingress_path,
+            HTTP_X_FORWARDED_HOST="192.168.0.103:8099",
+            HTTP_X_FORWARDED_PROTO="http",
             HTTP_ORIGIN=origin,
         )
 
         self.assertEqual(response.status_code, 302)
         self.assertTrue(Recipe.objects.filter(title="Beans on toast").exists())
+
+    def test_supermarket_create_accepts_home_assistant_ingress_origin(self):
+        client = Client(enforce_csrf_checks=True)
+        ingress_path = "/3975db7c_shelfserve"
+        origin = "http://192.168.0.94:8123"
+
+        form_response = client.get(
+            reverse("supermarket_list"),
+            HTTP_HOST="192.168.0.103:8099",
+            HTTP_X_INGRESS_PATH=ingress_path,
+            HTTP_X_FORWARDED_HOST="192.168.0.103:8099",
+            HTTP_X_FORWARDED_PROTO="http",
+            HTTP_ORIGIN=origin,
+        )
+        self.assertEqual(form_response.status_code, 200)
+        csrf_token = client.cookies["csrftoken"].value
+
+        response = client.post(
+            reverse("supermarket_list"),
+            {
+                "csrfmiddlewaretoken": csrf_token,
+                "name": "Tesco",
+            },
+            HTTP_HOST="192.168.0.103:8099",
+            HTTP_X_INGRESS_PATH=ingress_path,
+            HTTP_X_FORWARDED_HOST="192.168.0.103:8099",
+            HTTP_X_FORWARDED_PROTO="http",
+            HTTP_ORIGIN=origin,
+        )
+
+        supermarket = Supermarket.objects.get(name="Tesco")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"{ingress_path}{reverse('supermarket_detail', args=[supermarket.pk])}")
 
     def test_week_start_uses_configurable_setting(self):
         settings = AppSetting.current()

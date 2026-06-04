@@ -35,7 +35,7 @@ Use Django helpers where possible:
 
 If changing URL, static, or media handling, verify the page through Home Assistant ingress. A raw, unstyled HTML page usually means static assets are resolving outside the ingress path.
 
-Django's CSRF origin checks must also work through ingress. `recipe_planner/app/shelfserve/middleware.py` normalizes missing forwarded host and protocol metadata from the request `Origin` header when `X-Ingress-Path` is present, so Django compares POST requests against the Home Assistant URL rather than the internal add-on backend host.
+Django's CSRF origin checks must also work through ingress. `recipe_planner/app/shelfserve/middleware.py` normalizes forwarded host and protocol metadata from the request `Origin` header when `X-Ingress-Path` is present, so Django compares POST requests against the Home Assistant URL rather than the internal add-on backend host.
 
 ## Home Assistant Update Path
 
