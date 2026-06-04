@@ -11,11 +11,12 @@ class IngressPathMiddleware:
 
     def __call__(self, request):
         original_prefix = get_script_prefix()
+        self._set_forwarded_origin(request)
+
         ingress_path = request.META.get("HTTP_X_INGRESS_PATH", "").rstrip("/")
         if ingress_path:
             request.META["SCRIPT_NAME"] = ingress_path
             set_script_prefix(f"{ingress_path}/")
-            self._set_forwarded_origin(request)
 
         try:
             return self.get_response(request)

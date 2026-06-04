@@ -102,6 +102,75 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertTrue(Recipe.objects.filter(title="Beans on toast").exists())
 
+    def test_recipe_create_accepts_origin_without_ingress_header(self):
+        client = Client(enforce_csrf_checks=True)
+        origin = "http://192.168.0.94:8123"
+
+        form_response = client.get(
+            reverse("recipe_create"),
+            HTTP_HOST="192.168.0.103:8099",
+            HTTP_X_FORWARDED_HOST="192.168.0.103:8099",
+            HTTP_X_FORWARDED_PROTO="http",
+            HTTP_ORIGIN=origin,
+        )
+        self.assertEqual(form_response.status_code, 200)
+        csrf_token = client.cookies["csrftoken"].value
+
+        response = client.post(
+            reverse("recipe_create"),
+            {
+                "csrfmiddlewaretoken": csrf_token,
+                "title": "Beans on toast",
+                "servings": "2",
+                "steps": "Toast bread.\nAdd beans.",
+                "tags_text": "quick",
+                "ingredient_name": ["Bread"],
+                "ingredient_quantity": ["4"],
+                "ingredient_unit": [Unit.ITEM],
+                "ingredient_category": ["Bakery"],
+                "ingredient_note": ["slices"],
+            },
+            HTTP_HOST="192.168.0.103:8099",
+            HTTP_X_FORWARDED_HOST="192.168.0.103:8099",
+            HTTP_X_FORWARDED_PROTO="http",
+            HTTP_ORIGIN=origin,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Recipe.objects.filter(title="Beans on toast").exists())
+
+    def test_recipe_create_accepts_proxy_https_without_origin_or_referer(self):
+        client = Client(enforce_csrf_checks=True)
+
+        form_response = client.get(
+            reverse("recipe_create"),
+            HTTP_HOST="192.168.0.103:8099",
+            HTTP_X_FORWARDED_PROTO="https",
+        )
+        self.assertEqual(form_response.status_code, 200)
+        csrf_token = client.cookies["csrftoken"].value
+
+        response = client.post(
+            reverse("recipe_create"),
+            {
+                "csrfmiddlewaretoken": csrf_token,
+                "title": "Beans on toast",
+                "servings": "2",
+                "steps": "Toast bread.\nAdd beans.",
+                "tags_text": "quick",
+                "ingredient_name": ["Bread"],
+                "ingredient_quantity": ["4"],
+                "ingredient_unit": [Unit.ITEM],
+                "ingredient_category": ["Bakery"],
+                "ingredient_note": ["slices"],
+            },
+            HTTP_HOST="192.168.0.103:8099",
+            HTTP_X_FORWARDED_PROTO="https",
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Recipe.objects.filter(title="Beans on toast").exists())
+
     def test_supermarket_create_accepts_home_assistant_ingress_origin(self):
         client = Client(enforce_csrf_checks=True)
         ingress_path = "/3975db7c_shelfserve"
