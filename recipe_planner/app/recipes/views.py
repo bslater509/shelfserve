@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
+from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponseBadRequest, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
@@ -199,11 +200,7 @@ def supermarket_list(request):
 def supermarket_detail(request, pk):
     supermarket = get_object_or_404(Supermarket.objects.prefetch_related("sections"), pk=pk)
     if request.method == "POST":
-        names = [normalise_name(line) for line in request.POST.get("sections", "").splitlines()]
-        names = [name for name in names if name]
-        supermarket.sections.all().delete()
-        for index, name in enumerate(dict.fromkeys(names)):
-            SupermarketSection.objects.create(supermarket=supermarket, name=name, order=index)
+        save_supermarket_sections(supermarket, request.POST.get("sections", ""))
         messages.success(request, "Aisle order saved.")
         return redirect("supermarket_detail", pk=supermarket.pk)
     section_text = "\n".join(supermarket.sections.values_list("name", flat=True))
@@ -225,6 +222,44 @@ def settings_view(request):
     else:
         form = SettingsForm(instance=settings)
     return render(request, "recipes/settings.html", {"form": form})
+
+
+def save_supermarket_sections(supermarket, sections_text):
+    names = parse_section_names(sections_text)
+    saved_section_ids = []
+
+    with transaction.atomic():
+        existing_sections = {
+            section.name.casefold(): section
+            for section in SupermarketSection.objects.select_for_update().filter(supermarket=supermarket)
+        }
+        for index, name in enumerate(names):
+            section = existing_sections.get(name.casefold())
+            if section:
+                if section.name != name or section.order != index:
+                    section.name = name
+                    section.order = index
+                    section.save(update_fields=["name", "order"])
+            else:
+                section = SupermarketSection.objects.create(supermarket=supermarket, name=name, order=index)
+            saved_section_ids.append(section.pk)
+
+        stale_sections = SupermarketSection.objects.filter(supermarket=supermarket)
+        if saved_section_ids:
+            stale_sections = stale_sections.exclude(pk__in=saved_section_ids)
+        stale_sections.delete()
+
+
+def parse_section_names(sections_text):
+    names = []
+    seen = set()
+    for line in sections_text.splitlines():
+        name = normalise_name(line)
+        key = name.casefold()
+        if name and key not in seen:
+            names.append(name)
+            seen.add(key)
+    return names
 
 
 def start_of_week(value, week_start):

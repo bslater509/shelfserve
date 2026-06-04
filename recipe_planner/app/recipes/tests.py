@@ -353,6 +353,36 @@ class RecipePlannerTests(TestCase):
         self.assertNotIn(cookie_secret, log_output)
         self.assertNotIn("Tesco", log_output)
 
+    def test_supermarket_aisle_order_save_is_scoped_to_one_supermarket(self):
+        tesco = Supermarket.objects.create(name="Tesco")
+        tesco_fruit = SupermarketSection.objects.create(supermarket=tesco, name="Fruit & veg", order=0)
+        tesco_bakery = SupermarketSection.objects.create(supermarket=tesco, name="Bakery", order=1)
+        asda = Supermarket.objects.create(name="Asda")
+        SupermarketSection.objects.create(supermarket=asda, name="Bakery", order=0)
+        SupermarketSection.objects.create(supermarket=asda, name="Fruit & veg", order=1)
+
+        response = self.client.post(
+            reverse("supermarket_detail", args=[tesco.pk]),
+            {"sections": "Bakery\nFruit & veg\nTins\nBakery"},
+        )
+
+        self.assertRedirects(response, reverse("supermarket_detail", args=[tesco.pk]))
+        self.assertEqual(
+            list(tesco.sections.values_list("name", "order", "pk")),
+            [
+                ("Bakery", 0, tesco_bakery.pk),
+                ("Fruit & veg", 1, tesco_fruit.pk),
+                ("Tins", 2, SupermarketSection.objects.get(supermarket=tesco, name="Tins").pk),
+            ],
+        )
+        self.assertEqual(
+            list(asda.sections.values_list("name", "order")),
+            [
+                ("Bakery", 0),
+                ("Fruit & veg", 1),
+            ],
+        )
+
     def test_week_start_uses_configurable_setting(self):
         settings = AppSetting.current()
         settings.week_start = 6

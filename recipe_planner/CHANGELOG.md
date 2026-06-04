@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.9
+
+- Save aisle order changes in place for the selected supermarket without recreating other supermarket aisle rows.
+
 ## 0.1.8
 
 - Fix Home Assistant ingress form submissions when the browser sends an opaque `Origin: null` header.
