@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
 from .models import (
@@ -61,6 +61,42 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(recipe.tags.count(), 2)
         self.assertEqual(recipe.ingredients.count(), 2)
         self.assertEqual(Ingredient.objects.get(name="Bread").category, "Bakery")
+
+    def test_recipe_create_accepts_home_assistant_ingress_origin(self):
+        client = Client(enforce_csrf_checks=True)
+        ingress_path = "/3975db7c_shelfserve"
+        origin = "http://192.168.0.94:8123"
+
+        form_response = client.get(
+            reverse("recipe_create"),
+            HTTP_HOST="192.168.0.103:8099",
+            HTTP_X_INGRESS_PATH=ingress_path,
+            HTTP_ORIGIN=origin,
+        )
+        self.assertEqual(form_response.status_code, 200)
+        csrf_token = client.cookies["csrftoken"].value
+
+        response = client.post(
+            reverse("recipe_create"),
+            {
+                "csrfmiddlewaretoken": csrf_token,
+                "title": "Beans on toast",
+                "servings": "2",
+                "steps": "Toast bread.\nAdd beans.",
+                "tags_text": "quick",
+                "ingredient_name": ["Bread"],
+                "ingredient_quantity": ["4"],
+                "ingredient_unit": [Unit.ITEM],
+                "ingredient_category": ["Bakery"],
+                "ingredient_note": ["slices"],
+            },
+            HTTP_HOST="192.168.0.103:8099",
+            HTTP_X_INGRESS_PATH=ingress_path,
+            HTTP_ORIGIN=origin,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Recipe.objects.filter(title="Beans on toast").exists())
 
     def test_week_start_uses_configurable_setting(self):
         settings = AppSetting.current()
