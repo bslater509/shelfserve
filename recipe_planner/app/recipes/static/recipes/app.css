@@ -396,3 +396,32 @@ textarea {
   }
 }
 
+.aisle-rows {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.aisle-row {
+  display: grid;
+  grid-template-columns: 1fr 40px 40px 40px;
+  gap: 8px;
+}
+
+.aisle-row .icon-button {
+  height: 42px;
+}
+
+.aisle-row .icon-button:hover {
+  background: var(--soft);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.aisle-row .icon-button[data-remove-row]:hover {
+  background: #fdf2f2;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+

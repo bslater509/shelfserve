@@ -363,7 +363,10 @@ class RecipePlannerTests(TestCase):
 
         response = self.client.post(
             reverse("supermarket_detail", args=[tesco.pk]),
-            {"sections": "Bakery\nFruit & veg\nTins\nBakery"},
+            {
+                "name": "Tesco",
+                "sections": ["Bakery", "Fruit & veg", "Tins", "Bakery"],
+            },
         )
 
         self.assertRedirects(response, reverse("supermarket_detail", args=[tesco.pk]))
@@ -380,6 +383,27 @@ class RecipePlannerTests(TestCase):
             [
                 ("Bakery", 0),
                 ("Fruit & veg", 1),
+            ],
+        )
+
+    def test_supermarket_rename_and_aisle_deduplication(self):
+        tesco = Supermarket.objects.create(name="Tesco Original")
+        response = self.client.post(
+            reverse("supermarket_detail", args=[tesco.pk]),
+            {
+                "name": "Tesco Renamed",
+                "sections": ["Bakery", "", "bakery", "  Dairy  ", "Bakery"],
+            },
+        )
+        self.assertRedirects(response, reverse("supermarket_detail", args=[tesco.pk]))
+        tesco.refresh_from_db()
+        self.assertEqual(tesco.name, "Tesco Renamed")
+        # Empty and duplicate sections should be ignored/deduplicated (case-insensitive)
+        self.assertEqual(
+            list(tesco.sections.values_list("name", "order")),
+            [
+                ("Bakery", 0),
+                ("Dairy", 1),
             ],
         )
 

@@ -200,14 +200,27 @@ def supermarket_list(request):
 def supermarket_detail(request, pk):
     supermarket = get_object_or_404(Supermarket.objects.prefetch_related("sections"), pk=pk)
     if request.method == "POST":
-        save_supermarket_sections(supermarket, request.POST.get("sections", ""))
-        messages.success(request, "Aisle order saved.")
-        return redirect("supermarket_detail", pk=supermarket.pk)
-    section_text = "\n".join(supermarket.sections.values_list("name", flat=True))
+        form = SupermarketForm(request.POST, instance=supermarket)
+        sections_list = request.POST.getlist("sections")
+        if form.is_valid():
+            supermarket = form.save()
+            save_supermarket_sections(supermarket, sections_list)
+            messages.success(request, "Supermarket updated.")
+            return redirect("supermarket_detail", pk=supermarket.pk)
+    else:
+        form = SupermarketForm(instance=supermarket)
+
+    sections = list(supermarket.sections.all())
+    default_aisles = ["Fruit & veg", "Bakery", "Dairy", "Meat & Poultry", "Frozen", "Pantry", "Drinks"]
     return render(
         request,
         "recipes/supermarket_detail.html",
-        {"supermarket": supermarket, "section_text": section_text},
+        {
+            "supermarket": supermarket,
+            "form": form,
+            "sections": sections,
+            "default_aisles": default_aisles,
+        },
     )
 
 
@@ -224,8 +237,8 @@ def settings_view(request):
     return render(request, "recipes/settings.html", {"form": form})
 
 
-def save_supermarket_sections(supermarket, sections_text):
-    names = parse_section_names(sections_text)
+def save_supermarket_sections(supermarket, sections_data):
+    names = parse_section_names(sections_data)
     saved_section_ids = []
 
     with transaction.atomic():
@@ -250,10 +263,14 @@ def save_supermarket_sections(supermarket, sections_text):
         stale_sections.delete()
 
 
-def parse_section_names(sections_text):
+def parse_section_names(sections_data):
     names = []
     seen = set()
-    for line in sections_text.splitlines():
+    if isinstance(sections_data, str):
+        lines = sections_data.splitlines()
+    else:
+        lines = sections_data
+    for line in lines:
         name = normalise_name(line)
         key = name.casefold()
         if name and key not in seen:

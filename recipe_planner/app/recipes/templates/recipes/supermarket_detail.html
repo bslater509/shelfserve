@@ -6,11 +6,86 @@
   <a class="button" href="{% url 'supermarket_list' %}">All supermarkets</a>
 </section>
 
-<form method="post" class="panel form-panel">
+<form method="post" class="form-layout">
   {% csrf_token %}
-  <label>Aisle order
-    <textarea name="sections" rows="14">{{ section_text }}</textarea>
-  </label>
-  <button class="button primary" type="submit">Save aisle order</button>
+  <section class="panel form-panel">
+    {{ form.non_field_errors }}
+    <label>Supermarket name
+      {{ form.name }}
+    </label>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading">
+      <h2>Aisles / Sections</h2>
+      <button class="button" type="button" data-add-row>Add row</button>
+    </div>
+    <div class="aisle-rows" data-aisle-rows>
+      {% for section in sections %}
+        <div class="aisle-row">
+          <input name="sections" value="{{ section.name }}" required>
+          <button class="icon-button" type="button" data-move-up aria-label="Move up">↑</button>
+          <button class="icon-button" type="button" data-move-down aria-label="Move down">↓</button>
+          <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
+        </div>
+      {% empty %}
+        {% for default_aisle in default_aisles %}
+          <div class="aisle-row">
+            <input name="sections" value="{{ default_aisle }}" required>
+            <button class="icon-button" type="button" data-move-up aria-label="Move up">↑</button>
+            <button class="icon-button" type="button" data-move-down aria-label="Move down">↓</button>
+            <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
+          </div>
+        {% endfor %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="actions">
+    <button class="button primary" type="submit">Save supermarket</button>
+    <a class="button" href="{% url 'supermarket_list' %}">Cancel</a>
+  </div>
 </form>
+
+<template id="aisle-template">
+  <div class="aisle-row">
+    <input name="sections" required>
+    <button class="icon-button" type="button" data-move-up aria-label="Move up">↑</button>
+    <button class="icon-button" type="button" data-move-down aria-label="Move down">↓</button>
+    <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
+  </div>
+</template>
+
+<script>
+  const rows = document.querySelector("[data-aisle-rows]");
+  const template = document.querySelector("#aisle-template");
+
+  document.querySelector("[data-add-row]").addEventListener("click", () => {
+    const clone = template.content.cloneNode(true);
+    rows.appendChild(clone);
+  });
+
+  rows.addEventListener("click", (event) => {
+    const removeBtn = event.target.closest("[data-remove-row]");
+    const moveUpBtn = event.target.closest("[data-move-up]");
+    const moveDownBtn = event.target.closest("[data-move-down]");
+
+    if (removeBtn) {
+      const row = removeBtn.closest(".aisle-row");
+      row.remove();
+    } else if (moveUpBtn) {
+      const row = moveUpBtn.closest(".aisle-row");
+      const prev = row.previousElementSibling;
+      if (prev) {
+        rows.insertBefore(row, prev);
+      }
+    } else if (moveDownBtn) {
+      const row = moveDownBtn.closest(".aisle-row");
+      const next = row.nextElementSibling;
+      if (next) {
+        rows.insertBefore(next, row);
+      }
+    }
+  });
+</script>
 {% endblock %}

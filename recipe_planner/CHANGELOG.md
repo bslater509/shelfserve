@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.10
+
+- Replace basic text area supermarket aisle editor with interactive row-based editor supporting reordering, addition, and deletion.
+- Add ability to modify the supermarket name directly on the detail page.
+
 ## 0.1.9
 
 - Save aisle order changes in place for the selected supermarket without recreating other supermarket aisle rows.
