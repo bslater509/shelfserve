@@ -3,6 +3,7 @@ import tempfile
 from datetime import date
 from decimal import Decimal
 
+from django.conf import settings as django_settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
@@ -283,6 +284,42 @@ class RecipePlannerTests(TestCase):
         supermarket = Supermarket.objects.get(name="Tesco")
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], f"{ingress_path}{reverse('supermarket_detail', args=[supermarket.pk])}")
+
+    def test_csrf_failure_debug_logs_ingress_context_without_secrets(self):
+        client = Client(enforce_csrf_checks=True)
+        ingress_path = "/3975db7c_shelfserve"
+        origin = "http://192.168.0.94:8123"
+        cookie_secret = "a" * 32
+        client.cookies[django_settings.CSRF_COOKIE_NAME] = cookie_secret
+
+        with self.assertLogs("shelfserve.csrf", level="DEBUG") as logs:
+            response = client.post(
+                reverse("supermarket_list"),
+                {
+                    "name": "Tesco",
+                },
+                HTTP_HOST="192.168.0.103:8099",
+                HTTP_X_INGRESS_PATH=ingress_path,
+                HTTP_X_FORWARDED_HOST="192.168.0.103:8099",
+                HTTP_X_FORWARDED_PROTO="http",
+                HTTP_ORIGIN=origin,
+            )
+
+        self.assertEqual(response.status_code, 403)
+        log_output = "\n".join(logs.output)
+        self.assertIn("CSRF failure diagnostics", log_output)
+        self.assertIn("CSRF token missing", log_output)
+        self.assertIn("'method': 'POST'", log_output)
+        self.assertIn(f"'x_ingress_path': '{ingress_path}'", log_output)
+        self.assertIn(f"'origin': '{origin}'", log_output)
+        self.assertIn("'x_forwarded_host': '192.168.0.94:8123'", log_output)
+        self.assertIn("'x_forwarded_proto': 'http'", log_output)
+        self.assertIn("'script_name': '/3975db7c_shelfserve'", log_output)
+        self.assertIn("'csrf_cookie_present': True", log_output)
+        self.assertIn("'submitted_csrf_field_present': False", log_output)
+        self.assertIn("'post_field_names': ['name']", log_output)
+        self.assertNotIn(cookie_secret, log_output)
+        self.assertNotIn("Tesco", log_output)
 
     def test_week_start_uses_configurable_setting(self):
         settings = AppSetting.current()

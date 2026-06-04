@@ -9,6 +9,15 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 (DATA_DIR / "static").mkdir(parents=True, exist_ok=True)
 SECRET_KEY = os.environ.get("SHELFSERVE_SECRET_KEY", "development-only-change-me")
 DEBUG = os.environ.get("SHELFSERVE_DEBUG", "").lower() in {"1", "true", "yes"}
+LOG_LEVEL = {
+    "trace": "DEBUG",
+    "debug": "DEBUG",
+    "info": "INFO",
+    "notice": "INFO",
+    "warning": "WARNING",
+    "error": "ERROR",
+    "fatal": "CRITICAL",
+}.get(os.environ.get("SHELFSERVE_LOG_LEVEL", "info").lower(), "INFO")
 
 ALLOWED_HOSTS = ["*"]
 CSRF_TRUSTED_ORIGINS = [
@@ -41,6 +50,34 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = "shelfserve.urls"
+CSRF_FAILURE_VIEW = "shelfserve.csrf.csrf_failure"
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "simple": {
+            "format": "%(levelname)s %(name)s: %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "simple",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": LOG_LEVEL,
+    },
+    "loggers": {
+        "shelfserve": {
+            "handlers": ["console"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
+    },
+}
 
 TEMPLATES = [
     {
