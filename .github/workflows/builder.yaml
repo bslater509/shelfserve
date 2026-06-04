@@ -1,20 +1,6 @@
 name: Builder
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/build-app.yaml"
-      - ".github/workflows/builder.yaml"
-      - "recipe_planner/**"
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/build-app.yaml"
-      - ".github/workflows/builder.yaml"
-      - "recipe_planner/**"
   workflow_dispatch:
 
 permissions:
