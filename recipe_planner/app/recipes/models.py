@@ -88,7 +88,6 @@ class Recipe(models.Model):
     image = models.ImageField(upload_to="recipes/", blank=True)
     servings = models.PositiveIntegerField(default=4, validators=[MinValueValidator(1)])
     tags = models.ManyToManyField(Tag, blank=True)
-    steps = models.TextField(blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -115,6 +114,20 @@ class RecipeIngredient(models.Model):
 
     def __str__(self):
         return f"{self.quantity:g} {self.unit} {self.ingredient.name}"
+
+
+class RecipeStep(models.Model):
+    recipe = models.ForeignKey(Recipe, related_name="steps", on_delete=models.CASCADE)
+    text = models.TextField()
+    duration_minutes = models.PositiveIntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order"]
+
+    def __str__(self):
+        return f"Step {self.order + 1} for {self.recipe.title}"
+
 
 
 class Supermarket(models.Model):

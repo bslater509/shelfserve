@@ -17,6 +17,7 @@ from .models import (
     MealPlanEntry,
     Recipe,
     RecipeIngredient,
+    RecipeStep,
     ShoppingList,
     ShoppingListItem,
     Supermarket,
@@ -65,10 +66,14 @@ def recipe_detail(request, pk):
 def recipe_edit(request, pk=None):
     recipe = get_object_or_404(Recipe, pk=pk) if pk else None
     imported_image_path = ""
+    ingredients = []
+    steps = []
+
     if request.method == "POST":
         form = RecipeForm(request.POST, request.FILES, instance=recipe)
         ingredient_rows = parse_ingredient_rows(request.POST)
-        if form.is_valid() and ingredient_rows:
+        step_rows = parse_step_rows(request.POST)
+        if form.is_valid() and ingredient_rows and step_rows:
             recipe = form.save(commit=False)
             imported_img = request.POST.get("imported_image_path")
             if imported_img and not request.FILES.get("image"):
@@ -76,20 +81,43 @@ def recipe_edit(request, pk=None):
             recipe.save()
             save_recipe_tags(recipe, request.POST.get("tags_text", ""))
             save_recipe_ingredients(recipe, ingredient_rows)
+            save_recipe_steps(recipe, step_rows)
             messages.success(request, "Recipe saved.")
             return redirect(recipe)
+            
+        # Re-populate ingredients list with POST data for rendering if validation fails
+        for row in ingredient_rows:
+            ingredients.append({
+                "ingredient": {
+                    "name": row["name"],
+                    "category": row["category"],
+                },
+                "quantity": row["quantity"],
+                "unit": row["unit"],
+                "note": row["note"],
+            })
+            
+        # Re-populate steps list with POST data for rendering if validation fails
+        for row in step_rows:
+            steps.append({
+                "text": row["text"],
+                "duration_minutes": row["duration_minutes"],
+            })
+            
         if not ingredient_rows:
             messages.error(request, "Add at least one ingredient with a quantity.")
+        if not step_rows:
+            messages.error(request, "Add at least one instruction step.")
     else:
         initial = {}
         imported_ingredients = []
+        imported_steps = []
         if not recipe:
             imported = request.session.pop("imported_recipe", None)
             if imported:
                 initial = {
                     "title": imported.get("title", ""),
                     "servings": imported.get("servings", 4),
-                    "steps": imported.get("steps", ""),
                     "tags_text": ", ".join(imported.get("tags_list", [])),
                 }
                 imported_image_path = imported.get("image_path", "")
@@ -103,15 +131,28 @@ def recipe_edit(request, pk=None):
                         "unit": ing.get("unit", "item"),
                         "note": ing.get("note", ""),
                     })
+                for step in imported.get("steps", []):
+                    if isinstance(step, dict):
+                        imported_steps.append({
+                            "text": step.get("text", ""),
+                            "duration_minutes": step.get("duration_minutes"),
+                        })
+                    else:
+                        imported_steps.append({
+                            "text": str(step),
+                            "duration_minutes": None,
+                        })
         
         form = RecipeForm(instance=recipe, initial=initial if not recipe else None)
         if recipe:
             form.fields["tags_text"].initial = ", ".join(recipe.tags.values_list("name", flat=True))
 
-    if recipe:
-        ingredients = list(recipe.ingredients.select_related("ingredient"))
-    else:
-        ingredients = imported_ingredients
+        if recipe:
+            ingredients = list(recipe.ingredients.select_related("ingredient"))
+            steps = list(recipe.steps.all().order_by("order"))
+        else:
+            ingredients = imported_ingredients
+            steps = imported_steps
 
     suggested_ingredients = list(Ingredient.objects.values_list("name", flat=True).distinct().order_by("name"))
     suggested_categories = list(Ingredient.objects.exclude(category="").values_list("category", flat=True).distinct().order_by("category"))
@@ -122,6 +163,7 @@ def recipe_edit(request, pk=None):
             "form": form,
             "recipe": recipe,
             "ingredients": ingredients,
+            "steps": steps,
             "units": Unit.choices,
             "suggested_ingredients": suggested_ingredients,
             "suggested_categories": suggested_categories,
@@ -471,3 +513,44 @@ def save_recipe_ingredients(recipe, rows):
             note=row["note"],
             order=row["order"],
         )
+
+
+def parse_step_rows(post_data):
+    rows = []
+    texts = post_data.getlist("step_text")
+    durations = post_data.getlist("step_duration")
+
+    for index, raw_text in enumerate(texts):
+        text = raw_text.strip()
+        if not text:
+            continue
+        
+        duration_minutes = None
+        if index < len(durations) and durations[index].strip():
+            try:
+                duration_minutes = int(durations[index])
+                if duration_minutes <= 0:
+                    duration_minutes = None
+            except ValueError:
+                duration_minutes = None
+                
+        rows.append(
+            {
+                "text": text,
+                "duration_minutes": duration_minutes,
+                "order": index,
+            }
+        )
+    return rows
+
+
+def save_recipe_steps(recipe, rows):
+    recipe.steps.all().delete()
+    for row in rows:
+        RecipeStep.objects.create(
+            recipe=recipe,
+            text=row["text"],
+            duration_minutes=row["duration_minutes"],
+            order=row["order"],
+        )
+

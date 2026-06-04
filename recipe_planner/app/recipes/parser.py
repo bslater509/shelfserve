@@ -249,6 +249,32 @@ def parse_ingredient_line(line):
         "category": category,
     }
 
+def extract_step_duration(text):
+    """Uses regex to look for time mentions like '15 minutes' or '1 hour' and returns duration in minutes."""
+    if not text:
+        return None
+    # 1. Hour + minute pattern: e.g., "1 hour 30 minutes" or "1 hr 30 mins"
+    hr_min_match = re.search(
+        r'\b(\d+)\s*(?:hour|hr)s?\s*(?:and\s*)?(\d+)\s*(?:min|minute)s?\b', 
+        text, 
+        re.IGNORECASE
+    )
+    if hr_min_match:
+        return int(hr_min_match.group(1)) * 60 + int(hr_min_match.group(2))
+        
+    # 2. Hours only pattern: e.g., "1 hour" or "2 hrs"
+    hr_match = re.search(r'\b(\d+)\s*(?:hour|hr)s?\b', text, re.IGNORECASE)
+    if hr_match:
+        return int(hr_match.group(1)) * 60
+        
+    # 3. Minutes only pattern: e.g., "15 minutes" or "10 mins"
+    min_match = re.search(r'\b(\d+)\s*(?:min|minute)s?\b', text, re.IGNORECASE)
+    if min_match:
+        return int(min_match.group(1))
+        
+    return None
+
+
 def parse_recipe_url(url):
     """Scrapes a recipe URL using recipe-scrapers library."""
     scraper = scrape_me(url)
@@ -258,16 +284,26 @@ def parse_recipe_url(url):
     
     # Process instructions
     instructions = scraper.instructions()
+    raw_steps = []
     if isinstance(instructions, list):
-        steps_list = []
         for item in instructions:
             if isinstance(item, dict):
-                steps_list.append(item.get("text", ""))
+                text = item.get("text", "").strip()
             else:
-                steps_list.append(str(item))
-        steps = "\n".join([s.strip() for s in steps_list if s.strip()])
+                text = str(item).strip()
+            if text:
+                raw_steps.append(text)
     else:
-        steps = str(instructions or "").strip()
+        # Split by newlines if it's a single string
+        raw_steps = [s.strip() for s in str(instructions or "").splitlines() if s.strip()]
+        
+    steps = []
+    for s in raw_steps:
+        duration = extract_step_duration(s)
+        steps.append({
+            "text": s,
+            "duration_minutes": duration
+        })
         
     # Process ingredients
     raw_ingredients = scraper.ingredients()
@@ -336,7 +372,13 @@ def parse_recipe_text(text):
         elif state == 2:
             steps_list.append(line)
             
-    steps = "\n".join(steps_list)
+    steps = []
+    for line in steps_list:
+        duration = extract_step_duration(line)
+        steps.append({
+            "text": line,
+            "duration_minutes": duration
+        })
     
     return {
         "title": title,

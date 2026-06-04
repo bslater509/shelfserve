@@ -290,15 +290,40 @@ textarea {
 
 .ingredient-row {
   display: grid;
-  grid-template-columns: minmax(160px, 2fr) minmax(82px, .7fr) minmax(88px, .8fr) minmax(130px, 1fr) minmax(130px, 1fr) 40px;
+  grid-template-columns: minmax(160px, 2fr) minmax(82px, .7fr) minmax(88px, .8fr) minmax(130px, 1fr) minmax(130px, 1fr) 120px;
   gap: 8px;
-  min-width: 760px;
+  min-width: 820px;
 }
 
 .ingredient-row.header {
   color: var(--muted);
   font-size: .85rem;
   font-weight: 700;
+}
+
+.step-table {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  overflow-x: auto;
+}
+
+.step-row {
+  display: grid;
+  grid-template-columns: 1fr minmax(100px, 120px) 120px;
+  gap: 8px;
+  min-width: 600px;
+}
+
+.step-row.header {
+  color: var(--muted);
+  font-size: .85rem;
+  font-weight: 700;
+}
+
+.step-actions {
+  display: flex;
+  gap: 4px;
 }
 
 .icon-button,
@@ -310,6 +335,7 @@ textarea {
   background: #ffffff;
   color: var(--ink);
   cursor: pointer;
+  height: 42px;
 }
 
 .planner-grid {
@@ -476,5 +502,143 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Recipe Detail Step Layout & Active Timers */
+.step-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+}
+
+.step-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.step-item:first-child {
+  border-top: none;
+}
+
+.step-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.step-number {
+  font-weight: 800;
+  color: var(--primary);
+  min-width: 24px;
+}
+
+.step-text {
+  flex: 1;
+}
+
+.timer-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--soft);
+  color: var(--primary);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 4px 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.timer-badge:hover {
+  background: var(--primary);
+  color: var(--primary-ink);
+  border-color: var(--primary);
+}
+
+.timer-badge.active {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(178, 76, 50, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(178, 76, 50, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(178, 76, 50, 0);
+  }
+}
+
+.timer-widget {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-top: 6px;
+  animation: slideDown 0.25s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.timer-time {
+  font-family: monospace;
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--ink);
+  min-width: 75px;
+}
+
+.timer-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.timer-btn {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 10px;
+  background: #ffffff;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.timer-btn.primary {
+  background: var(--primary);
+  color: var(--primary-ink);
+  border-color: var(--primary);
+}
+
+.timer-btn.stop {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+
 
 

@@ -30,7 +30,217 @@
   </article>
   <article class="panel">
     <h2>Steps</h2>
-    <div class="prose">{{ recipe.steps|linebreaks }}</div>
+    <ul class="step-list">
+      {% for item in recipe.steps.all %}
+        <li class="step-item">
+          <div class="step-header">
+            <span class="step-number">{{ forloop.counter }}.</span>
+            <span class="step-text">{{ item.text|linebreaksbr }}</span>
+            {% if item.duration_minutes %}
+              <button class="timer-badge" data-duration="{{ item.duration_minutes }}" aria-label="Start timer for {{ item.duration_minutes }} minutes">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                <span>{{ item.duration_minutes }} min</span>
+              </button>
+            {% endif %}
+          </div>
+          {% if item.duration_minutes %}
+            <div class="timer-widget" style="display: none;">
+              <span class="timer-time">00:00</span>
+              <div class="timer-controls">
+                <button class="timer-btn primary" data-timer-action="start">Start</button>
+                <button class="timer-btn" data-timer-action="pause" style="display: none;">Pause</button>
+                <button class="timer-btn" data-timer-action="reset">Reset</button>
+              </div>
+            </div>
+          {% endif %}
+        </li>
+      {% empty %}
+        <p class="empty">No steps added for this recipe.</p>
+      {% endfor %}
+    </ul>
   </article>
 </section>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    let audioCtx = null;
+    let alarmInterval = null;
+
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+    }
+
+    function playBeep() {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      
+      osc.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 note
+      gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+      gainNode.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.05);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+      
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.5);
+    }
+
+    function triggerAlarm() {
+      initAudio();
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      playBeep();
+      alarmInterval = setInterval(playBeep, 1000);
+    }
+
+    function stopAlarm() {
+      if (alarmInterval) {
+        clearInterval(alarmInterval);
+        alarmInterval = null;
+      }
+    }
+
+    const stepList = document.querySelector(".step-list");
+    if (!stepList) return;
+
+    stepList.addEventListener("click", (event) => {
+      const target = event.target;
+      
+      const badge = target.closest(".timer-badge");
+      if (badge) {
+        initAudio();
+        const item = badge.closest(".step-item");
+        const widget = item.querySelector(".timer-widget");
+        if (widget) {
+          const isHidden = widget.style.display === "none";
+          widget.style.display = isHidden ? "flex" : "none";
+          if (isHidden && !widget.dataset.initialised) {
+            setupTimer(widget, badge);
+          }
+        }
+        return;
+      }
+
+      const btn = target.closest(".timer-btn");
+      if (btn) {
+        const widget = btn.closest(".timer-widget");
+        const action = btn.dataset.timerAction;
+        if (widget && action) {
+          handleTimerAction(widget, action);
+        }
+      }
+    });
+
+    function setupTimer(widget, badge) {
+      const minutes = parseInt(badge.dataset.duration, 10);
+      widget.dataset.initialMinutes = minutes;
+      widget.dataset.remainingSeconds = minutes * 60;
+      widget.dataset.status = "stopped";
+      widget.dataset.initialised = "true";
+      
+      updateTimerDisplay(widget);
+    }
+
+    function updateTimerDisplay(widget) {
+      const remaining = parseInt(widget.dataset.remainingSeconds, 10);
+      const m = Math.floor(remaining / 60);
+      const s = remaining % 60;
+      const timeStr = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+      widget.querySelector(".timer-time").textContent = timeStr;
+    }
+
+    function handleTimerAction(widget, action) {
+      initAudio();
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+
+      const item = widget.closest(".step-item");
+      const badge = item.querySelector(".timer-badge");
+      const startBtn = widget.querySelector('[data-timer-action="start"]');
+      const pauseBtn = widget.querySelector('[data-timer-action="pause"]');
+
+      if (action === "start") {
+        if (widget.dataset.status === "alarm") {
+          stopAlarm();
+          resetTimer(widget, badge);
+          return;
+        }
+
+        widget.dataset.status = "running";
+        badge.classList.add("active");
+        startBtn.style.display = "none";
+        pauseBtn.style.display = "inline-block";
+
+        const intervalId = setInterval(() => {
+          let remaining = parseInt(widget.dataset.remainingSeconds, 10);
+          if (remaining > 0) {
+            remaining--;
+            widget.dataset.remainingSeconds = remaining;
+            updateTimerDisplay(widget);
+          } else {
+            clearInterval(intervalId);
+            widget.dataset.timerIntervalId = "";
+            widget.dataset.status = "alarm";
+            
+            startBtn.textContent = "STOP";
+            startBtn.classList.add("stop");
+            startBtn.style.display = "inline-block";
+            pauseBtn.style.display = "none";
+            
+            triggerAlarm();
+          }
+        }, 1000);
+        widget.dataset.timerIntervalId = intervalId;
+
+      } else if (action === "pause") {
+        widget.dataset.status = "paused";
+        badge.classList.remove("active");
+        
+        const intervalId = widget.dataset.timerIntervalId;
+        if (intervalId) {
+          clearInterval(intervalId);
+          widget.dataset.timerIntervalId = "";
+        }
+        
+        startBtn.textContent = "Resume";
+        startBtn.classList.remove("stop");
+        startBtn.style.display = "inline-block";
+        pauseBtn.style.display = "none";
+
+      } else if (action === "reset") {
+        stopAlarm();
+        const intervalId = widget.dataset.timerIntervalId;
+        if (intervalId) {
+          clearInterval(intervalId);
+          widget.dataset.timerIntervalId = "";
+        }
+        resetTimer(widget, badge);
+      }
+    }
+
+    function resetTimer(widget, badge) {
+      badge.classList.remove("active");
+      const initialMinutes = parseInt(widget.dataset.initialMinutes, 10);
+      widget.dataset.remainingSeconds = initialMinutes * 60;
+      widget.dataset.status = "stopped";
+      
+      const startBtn = widget.querySelector('[data-timer-action="start"]');
+      const pauseBtn = widget.querySelector('[data-timer-action="pause"]');
+      
+      startBtn.textContent = "Start";
+      startBtn.classList.remove("stop");
+      startBtn.style.display = "inline-block";
+      pauseBtn.style.display = "none";
+      
+      updateTimerDisplay(widget);
+    }
+  });
+</script>
 {% endblock %}

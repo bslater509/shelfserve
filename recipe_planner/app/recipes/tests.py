@@ -46,7 +46,8 @@ class RecipePlannerTests(TestCase):
             {
                 "title": "Beans on toast",
                 "servings": "2",
-                "steps": "Toast bread.\nAdd beans.",
+                "step_text": ["Toast bread.", "Add beans."],
+                "step_duration": ["", ""],
                 "tags_text": "quick, vegetarian",
                 "ingredient_name": ["Bread", "Baked beans"],
                 "ingredient_quantity": ["4", "415"],
@@ -86,7 +87,8 @@ class RecipePlannerTests(TestCase):
                 "csrfmiddlewaretoken": csrf_token,
                 "title": "Beans on toast",
                 "servings": "2",
-                "steps": "Toast bread.\nAdd beans.",
+                "step_text": ["Toast bread.", "Add beans."],
+                "step_duration": ["", ""],
                 "tags_text": "quick",
                 "ingredient_name": ["Bread"],
                 "ingredient_quantity": ["4"],
@@ -124,7 +126,8 @@ class RecipePlannerTests(TestCase):
                 "csrfmiddlewaretoken": csrf_token,
                 "title": "Beans on toast",
                 "servings": "2",
-                "steps": "Toast bread.\nAdd beans.",
+                "step_text": ["Toast bread.", "Add beans."],
+                "step_duration": ["", ""],
                 "tags_text": "quick",
                 "ingredient_name": ["Bread"],
                 "ingredient_quantity": ["4"],
@@ -163,7 +166,8 @@ class RecipePlannerTests(TestCase):
                 "csrfmiddlewaretoken": csrf_token,
                 "title": "Beans on toast",
                 "servings": "2",
-                "steps": "Toast bread.\nAdd beans.",
+                "step_text": ["Toast bread.", "Add beans."],
+                "step_duration": ["", ""],
                 "tags_text": "quick",
                 "ingredient_name": ["Bread"],
                 "ingredient_quantity": ["4"],
@@ -203,7 +207,8 @@ class RecipePlannerTests(TestCase):
                 "csrfmiddlewaretoken": csrf_token,
                 "title": "Beans on toast",
                 "servings": "2",
-                "steps": "Toast bread.\nAdd beans.",
+                "step_text": ["Toast bread.", "Add beans."],
+                "step_duration": ["", ""],
                 "tags_text": "quick",
                 "ingredient_name": ["Bread"],
                 "ingredient_quantity": ["4"],
@@ -238,7 +243,8 @@ class RecipePlannerTests(TestCase):
                 "csrfmiddlewaretoken": csrf_token,
                 "title": "Beans on toast",
                 "servings": "2",
-                "steps": "Toast bread.\nAdd beans.",
+                "step_text": ["Toast bread.", "Add beans."],
+                "step_duration": ["", ""],
                 "tags_text": "quick",
                 "ingredient_name": ["Bread"],
                 "ingredient_quantity": ["4"],
@@ -550,7 +556,7 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(len(res["ingredients"]), 2)
         self.assertEqual(res["ingredients"][0]["name"], "eggs")
         self.assertEqual(res["ingredients"][0]["quantity"], "2.00")
-        self.assertIn("Melt butter.", res["steps"])
+        self.assertEqual(res["steps"][0]["text"], "Melt butter.")
 
     def test_recipe_import_views_and_prepopulation(self):
         from unittest.mock import patch
@@ -559,7 +565,9 @@ class RecipePlannerTests(TestCase):
         mock_data = {
             "title": "Mocked Egg",
             "servings": 2,
-            "steps": "Crack and fry.",
+            "steps": [
+                {"text": "Crack and fry.", "duration_minutes": 1}
+            ],
             "ingredients": [
                 {"name": "egg", "quantity": "2.00", "unit": "item", "note": "large", "category": "Dairy"}
             ],
@@ -593,7 +601,8 @@ class RecipePlannerTests(TestCase):
             {
                 "title": "Mocked Egg",
                 "servings": "2",
-                "steps": "Crack and fry.",
+                "step_text": ["Crack and fry."],
+                "step_duration": ["1"],
                 "tags_text": "easy",
                 "ingredient_name": ["egg"],
                 "ingredient_quantity": ["2.00"],
@@ -608,3 +617,36 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(post_response["Location"], recipe.get_absolute_url())
         self.assertEqual(recipe.image.name, "recipes/imported_mock.jpg")
         self.assertEqual(recipe.ingredients.count(), 1)
+
+    def test_extract_step_duration(self):
+        from .parser import extract_step_duration
+        self.assertEqual(extract_step_duration("Bake for 45 minutes at 180C"), 45)
+        self.assertEqual(extract_step_duration("Simmer for 1 hour"), 60)
+        self.assertEqual(extract_step_duration("Boil for 1 hr and 15 mins"), 75)
+        self.assertIsNone(extract_step_duration("Mix ingredients together"))
+
+    def test_recipe_create_saves_structured_steps_and_durations(self):
+        response = self.client.post(
+            reverse("recipe_create"),
+            {
+                "title": "Test recipe with timers",
+                "servings": "4",
+                "tags_text": "timer",
+                "ingredient_name": ["Sugar"],
+                "ingredient_quantity": ["100"],
+                "ingredient_unit": [Unit.GRAM],
+                "ingredient_category": ["Baking"],
+                "ingredient_note": [""],
+                "step_text": ["Preheat oven.", "Bake for 30 minutes."],
+                "step_duration": ["", "30"],
+            },
+        )
+        recipe = Recipe.objects.get(title="Test recipe with timers")
+        self.assertRedirects(response, recipe.get_absolute_url())
+        self.assertEqual(recipe.steps.count(), 2)
+        step1 = recipe.steps.get(order=0)
+        step2 = recipe.steps.get(order=1)
+        self.assertEqual(step1.text, "Preheat oven.")
+        self.assertIsNone(step1.duration_minutes)
+        self.assertEqual(step2.text, "Bake for 30 minutes.")
+        self.assertEqual(step2.duration_minutes, 30)

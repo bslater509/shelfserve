@@ -22,7 +22,6 @@
     </label>
     <label>Servings {{ form.servings }}</label>
     <label>Tags {{ form.tags_text }}</label>
-    <label>Steps {{ form.steps }}</label>
   </section>
 
   <section class="panel">
@@ -32,7 +31,7 @@
     </div>
     <div class="ingredient-table" data-ingredient-rows>
       <div class="ingredient-row header">
-        <span>Ingredient</span><span>Qty</span><span>Unit</span><span>Section</span><span>Note</span><span></span>
+        <span>Ingredient</span><span>Qty</span><span>Unit</span><span>Section</span><span>Note</span><span>Actions</span>
       </div>
       {% for item in ingredients %}
         <div class="ingredient-row">
@@ -45,7 +44,11 @@
           </select>
           <input name="ingredient_category" value="{{ item.ingredient.category }}" placeholder="Aisle" list="ingredient-categories-datalist">
           <input name="ingredient_note" value="{{ item.note }}" placeholder="Optional">
-          <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
+          <div class="step-actions">
+            <button class="icon-button" type="button" data-move-up aria-label="Move row up">↑</button>
+            <button class="icon-button" type="button" data-move-down aria-label="Move row down">↓</button>
+            <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
+          </div>
         </div>
       {% empty %}
         <div class="ingredient-row">
@@ -58,7 +61,44 @@
           </select>
           <input name="ingredient_category" placeholder="Aisle" list="ingredient-categories-datalist">
           <input name="ingredient_note" placeholder="Optional">
-          <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
+          <div class="step-actions">
+            <button class="icon-button" type="button" data-move-up aria-label="Move row up">↑</button>
+            <button class="icon-button" type="button" data-move-down aria-label="Move row down">↓</button>
+            <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading">
+      <h2>Instructions</h2>
+      <button class="button" type="button" data-add-step>Add step</button>
+    </div>
+    <div class="step-table" data-step-rows>
+      <div class="step-row header">
+        <span>Step description</span><span>Time (min)</span><span>Actions</span>
+      </div>
+      {% for item in steps %}
+        <div class="step-row">
+          <input name="step_text" value="{{ item.text }}" required placeholder="e.g. Preheat oven to 180°C">
+          <input name="step_duration" value="{% if item.duration_minutes %}{{ item.duration_minutes }}{% endif %}" type="number" min="1" placeholder="Optional" style="max-width: 120px;">
+          <div class="step-actions">
+            <button class="icon-button" type="button" data-move-up aria-label="Move step up">↑</button>
+            <button class="icon-button" type="button" data-move-down aria-label="Move step down">↓</button>
+            <button class="icon-button" type="button" data-remove-step aria-label="Remove step">x</button>
+          </div>
+        </div>
+      {% empty %}
+        <div class="step-row">
+          <input name="step_text" required placeholder="e.g. Preheat oven to 180°C">
+          <input name="step_duration" type="number" min="1" placeholder="Optional" style="max-width: 120px;">
+          <div class="step-actions">
+            <button class="icon-button" type="button" data-move-up aria-label="Move step up">↑</button>
+            <button class="icon-button" type="button" data-move-down aria-label="Move step down">↓</button>
+            <button class="icon-button" type="button" data-remove-step aria-label="Remove step">x</button>
+          </div>
         </div>
       {% endfor %}
     </div>
@@ -81,7 +121,23 @@
     </select>
     <input name="ingredient_category" placeholder="Aisle" list="ingredient-categories-datalist">
     <input name="ingredient_note" placeholder="Optional">
-    <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
+    <div class="step-actions">
+      <button class="icon-button" type="button" data-move-up aria-label="Move row up">↑</button>
+      <button class="icon-button" type="button" data-move-down aria-label="Move row down">↓</button>
+      <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
+    </div>
+  </div>
+</template>
+
+<template id="step-template">
+  <div class="step-row">
+    <input name="step_text" required placeholder="e.g. Preheat oven to 180°C">
+    <input name="step_duration" type="number" min="1" placeholder="Optional" style="max-width: 120px;">
+    <div class="step-actions">
+      <button class="icon-button" type="button" data-move-up aria-label="Move step up">↑</button>
+      <button class="icon-button" type="button" data-move-down aria-label="Move step down">↓</button>
+      <button class="icon-button" type="button" data-remove-step aria-label="Remove step">x</button>
+    </div>
   </div>
 </template>
 
@@ -98,16 +154,70 @@
 </datalist>
 
 <script>
-  const rows = document.querySelector("[data-ingredient-rows]");
-  const template = document.querySelector("#ingredient-template");
-  document.querySelector("[data-add-row]").addEventListener("click", () => {
-    rows.appendChild(template.content.cloneNode(true));
-  });
-  rows.addEventListener("click", (event) => {
-    if (event.target.matches("[data-remove-row]")) {
-      const row = event.target.closest(".ingredient-row");
-      if (rows.querySelectorAll(".ingredient-row:not(.header)").length > 1) row.remove();
-    }
+  document.addEventListener("DOMContentLoaded", () => {
+    // 1. Ingredients handling
+    const ingredientRows = document.querySelector("[data-ingredient-rows]");
+    const ingredientTemplate = document.querySelector("#ingredient-template");
+    
+    document.querySelector("[data-add-row]").addEventListener("click", () => {
+      ingredientRows.appendChild(ingredientTemplate.content.cloneNode(true));
+    });
+    
+    ingredientRows.addEventListener("click", (event) => {
+      const btn = event.target.closest("button");
+      if (!btn) return;
+      
+      const row = btn.closest(".ingredient-row");
+      if (!row || row.classList.contains("header")) return;
+      
+      if (btn.matches("[data-remove-row]")) {
+        if (ingredientRows.querySelectorAll(".ingredient-row:not(.header)").length > 1) {
+          row.remove();
+        }
+      } else if (btn.matches("[data-move-up]")) {
+        const prev = row.previousElementSibling;
+        if (prev && !prev.classList.contains("header")) {
+          ingredientRows.insertBefore(row, prev);
+        }
+      } else if (btn.matches("[data-move-down]")) {
+        const next = row.nextElementSibling;
+        if (next) {
+          ingredientRows.insertBefore(next, row);
+        }
+      }
+    });
+
+    // 2. Steps handling
+    const stepRows = document.querySelector("[data-step-rows]");
+    const stepTemplate = document.querySelector("#step-template");
+    
+    document.querySelector("[data-add-step]").addEventListener("click", () => {
+      stepRows.appendChild(stepTemplate.content.cloneNode(true));
+    });
+    
+    stepRows.addEventListener("click", (event) => {
+      const btn = event.target.closest("button");
+      if (!btn) return;
+      
+      const row = btn.closest(".step-row");
+      if (!row || row.classList.contains("header")) return;
+      
+      if (btn.matches("[data-remove-step]")) {
+        if (stepRows.querySelectorAll(".step-row:not(.header)").length > 1) {
+          row.remove();
+        }
+      } else if (btn.matches("[data-move-up]")) {
+        const prev = row.previousElementSibling;
+        if (prev && !prev.classList.contains("header")) {
+          stepRows.insertBefore(row, prev);
+        }
+      } else if (btn.matches("[data-move-down]")) {
+        const next = row.nextElementSibling;
+        if (next) {
+          stepRows.insertBefore(next, row);
+        }
+      }
+    });
   });
 </script>
 {% endblock %}

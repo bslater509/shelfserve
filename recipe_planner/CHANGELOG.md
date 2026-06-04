@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.14
+
+- Migrate recipe instructions from a single plain-text field to a structured database-backed `RecipeStep` table.
+- Support adding, removing, and reordering instructions and ingredients dynamically in the editor with Up/Down buttons.
+- Automatically extract step durations (e.g. "Bake for 30 minutes") during URL scraping and raw text imports.
+- Implement interactive countdown cooking timers on the recipe detail page, utilizing the browser's native Web Audio API to synthesize alarm beeps.
+
 ## 0.1.13
 
 - Add Recipe Importer supporting scraping from web URLs (using `recipe-scrapers`) and copy-pasting raw recipe text.
