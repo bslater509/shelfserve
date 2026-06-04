@@ -10,7 +10,10 @@
       <button class="button" type="submit">Search</button>
     </form>
   </div>
-  <a class="button primary" href="{% url 'recipe_create' %}">New recipe</a>
+  <div style="display: flex; gap: 8px;">
+    <a class="button" href="{% url 'recipe_import' %}">Import recipe</a>
+    <a class="button primary" href="{% url 'recipe_create' %}">New recipe</a>
+  </div>
 </section>
 
 <section class="cards">

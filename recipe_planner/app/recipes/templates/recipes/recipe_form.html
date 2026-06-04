@@ -1,4 +1,5 @@
 {% extends "recipes/base.html" %}
+{% load recipe_extras %}
 {% block title %}{% if recipe %}Edit{% else %}New{% endif %} recipe - ShelfServe{% endblock %}
 {% block content %}
 <section class="toolbar">
@@ -10,7 +11,15 @@
   <section class="panel form-panel">
     {{ form.non_field_errors }}
     <label>Title {{ form.title }}</label>
-    <label>Image {{ form.image }}</label>
+    <label>Image {{ form.image }}
+      {% if imported_image_path %}
+        <div class="imported-image-preview" style="margin-top: 8px;">
+          <input type="hidden" name="imported_image_path" value="{{ imported_image_path }}">
+          <span class="muted" style="font-weight: normal; display: block; margin-bottom: 4px;">Imported image pre-selected:</span>
+          <img src="{% ingress_url request '/media/'|add:imported_image_path %}" style="max-height: 120px; border-radius: 6px; display: block; border: 1px solid var(--line);">
+        </div>
+      {% endif %}
+    </label>
     <label>Servings {{ form.servings }}</label>
     <label>Tags {{ form.tags_text }}</label>
     <label>Steps {{ form.steps }}</label>

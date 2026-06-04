@@ -109,6 +109,7 @@ gunicorn shelfserve.wsgi:application --bind 0.0.0.0:${SHELFSERVE_PORT}
 - Before analyzing the repository or making changes, run `git status --short` and `git pull` so the local workspace is up to date. If the working tree already has local changes, inspect them first and avoid overwriting user work.
 - After making any intended repo changes, commit and git push them so Home Assistant can update from the remote repository. For Home Assistant add-on updates, bump `recipe_planner/config.yaml` `version` and update `recipe_planner/CHANGELOG.md` before pushing.
 - Preserve the existing Django structure and simple server-rendered templates.
+- Always check for and utilize existing libraries when implementing new features if required (e.g., recipe-scrapers for recipe imports) to avoid reinventing the wheel.
 - Keep Home Assistant ingress compatibility in mind for every link, form action, static asset, and media URL.
 - Store persistent runtime data under the add-on `/data` volume through `SHELFSERVE_DATA_DIR`; do not write persistent user data into the app directory.
 - Keep changes focused. Do not refactor unrelated models, templates, or add-on metadata while fixing ingress or UI issues.

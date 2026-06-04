@@ -509,3 +509,102 @@ class RecipePlannerTests(TestCase):
         item2 = ShoppingListItem.objects.get(shopping_list=shopping_list, ingredient_name="Paper towels")
         self.assertEqual(item2.section_name, "Household")
         self.assertEqual(item2.section_order, 9999)
+
+    def test_parse_ingredient_line(self):
+        from .parser import parse_ingredient_line
+        
+        # Test fractions
+        res = parse_ingredient_line("1/2 cup flour, sifted")
+        self.assertEqual(res["name"], "flour")
+        self.assertEqual(res["quantity"], "0.50")
+        self.assertEqual(res["unit"], Unit.ITEM)
+        self.assertEqual(res["note"], "cup, sifted")
+        
+        # Test unicode fractions
+        res2 = parse_ingredient_line("1½ tsp salt")
+        self.assertEqual(res2["name"], "salt")
+        self.assertEqual(res2["quantity"], "1.50")
+        self.assertEqual(res2["unit"], Unit.TEASPOON)
+        
+        # Test standard decimal & category lookup
+        Ingredient.objects.create(name="chicken breast", category="Meat")
+        res3 = parse_ingredient_line("500.50g chicken breast (skinless)")
+        self.assertEqual(res3["name"], "chicken breast")
+        self.assertEqual(res3["quantity"], "500.50")
+        self.assertEqual(res3["unit"], Unit.GRAM)
+        self.assertEqual(res3["note"], "skinless")
+        self.assertEqual(res3["category"], "Meat")
+
+    def test_parse_recipe_text(self):
+        from .parser import parse_recipe_text
+        raw_text = (
+            "Ingredients\n"
+            "2 eggs\n"
+            "1 tbsp butter\n"
+            "Instructions\n"
+            "Melt butter.\n"
+            "Fry eggs.\n"
+        )
+        res = parse_recipe_text(raw_text)
+        self.assertEqual(res["title"], "Imported Recipe")
+        self.assertEqual(len(res["ingredients"]), 2)
+        self.assertEqual(res["ingredients"][0]["name"], "eggs")
+        self.assertEqual(res["ingredients"][0]["quantity"], "2.00")
+        self.assertIn("Melt butter.", res["steps"])
+
+    def test_recipe_import_views_and_prepopulation(self):
+        from unittest.mock import patch
+        
+        # 1. Test POST to recipe_import view with raw text
+        mock_data = {
+            "title": "Mocked Egg",
+            "servings": 2,
+            "steps": "Crack and fry.",
+            "ingredients": [
+                {"name": "egg", "quantity": "2.00", "unit": "item", "note": "large", "category": "Dairy"}
+            ],
+            "tags_list": ["easy"],
+            "image_path": "recipes/imported_mock.jpg"
+        }
+        with patch("recipes.views.parse_recipe_text", return_value=mock_data) as mock_parse:
+            response = self.client.post(
+                reverse("recipe_import"),
+                {"raw_text": "2 large eggs\nCrack and fry."}
+            )
+            mock_parse.assert_called_once()
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(response["Location"], reverse("recipe_create"))
+            
+        # Verify it's in the session
+        self.assertEqual(self.client.session["imported_recipe"], mock_data)
+        
+        # 2. Test GET to recipe_create view (prepopulation)
+        get_response = self.client.get(reverse("recipe_create"))
+        self.assertEqual(get_response.status_code, 200)
+        self.assertContains(get_response, "Mocked Egg")
+        self.assertContains(get_response, "recipes/imported_mock.jpg")
+        
+        # The session variable should be cleared now
+        self.assertNotIn("imported_recipe", self.client.session)
+        
+        # 3. Test saving the prepopulated recipe (including imported image)
+        post_response = self.client.post(
+            reverse("recipe_create"),
+            {
+                "title": "Mocked Egg",
+                "servings": "2",
+                "steps": "Crack and fry.",
+                "tags_text": "easy",
+                "ingredient_name": ["egg"],
+                "ingredient_quantity": ["2.00"],
+                "ingredient_unit": [Unit.ITEM],
+                "ingredient_category": ["Dairy"],
+                "ingredient_note": ["large"],
+                "imported_image_path": "recipes/imported_mock.jpg",
+            }
+        )
+        recipe = Recipe.objects.get(title="Mocked Egg")
+        self.assertEqual(post_response.status_code, 302)
+        self.assertEqual(post_response["Location"], recipe.get_absolute_url())
+        self.assertEqual(recipe.image.name, "recipes/imported_mock.jpg")
+        self.assertEqual(recipe.ingredients.count(), 1)

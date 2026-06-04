@@ -25,6 +25,7 @@ from .models import (
     Unit,
 )
 from .services import build_shopping_list, normalise_name, normalise_tag_name
+from .parser import parse_recipe_url, parse_recipe_text
 
 
 def dashboard(request):
@@ -63,11 +64,16 @@ def recipe_detail(request, pk):
 
 def recipe_edit(request, pk=None):
     recipe = get_object_or_404(Recipe, pk=pk) if pk else None
+    imported_image_path = ""
     if request.method == "POST":
         form = RecipeForm(request.POST, request.FILES, instance=recipe)
         ingredient_rows = parse_ingredient_rows(request.POST)
         if form.is_valid() and ingredient_rows:
-            recipe = form.save()
+            recipe = form.save(commit=False)
+            imported_img = request.POST.get("imported_image_path")
+            if imported_img and not request.FILES.get("image"):
+                recipe.image = imported_img
+            recipe.save()
             save_recipe_tags(recipe, request.POST.get("tags_text", ""))
             save_recipe_ingredients(recipe, ingredient_rows)
             messages.success(request, "Recipe saved.")
@@ -75,11 +81,38 @@ def recipe_edit(request, pk=None):
         if not ingredient_rows:
             messages.error(request, "Add at least one ingredient with a quantity.")
     else:
-        form = RecipeForm(instance=recipe)
+        initial = {}
+        imported_ingredients = []
+        if not recipe:
+            imported = request.session.pop("imported_recipe", None)
+            if imported:
+                initial = {
+                    "title": imported.get("title", ""),
+                    "servings": imported.get("servings", 4),
+                    "steps": imported.get("steps", ""),
+                    "tags_text": ", ".join(imported.get("tags_list", [])),
+                }
+                imported_image_path = imported.get("image_path", "")
+                for ing in imported.get("ingredients", []):
+                    imported_ingredients.append({
+                        "ingredient": {
+                            "name": ing.get("name", ""),
+                            "category": ing.get("category", ""),
+                        },
+                        "quantity": ing.get("quantity", "1.00"),
+                        "unit": ing.get("unit", "item"),
+                        "note": ing.get("note", ""),
+                    })
+        
+        form = RecipeForm(instance=recipe, initial=initial if not recipe else None)
         if recipe:
             form.fields["tags_text"].initial = ", ".join(recipe.tags.values_list("name", flat=True))
 
-    ingredients = list(recipe.ingredients.select_related("ingredient")) if recipe else []
+    if recipe:
+        ingredients = list(recipe.ingredients.select_related("ingredient"))
+    else:
+        ingredients = imported_ingredients
+
     suggested_ingredients = list(Ingredient.objects.values_list("name", flat=True).distinct().order_by("name"))
     suggested_categories = list(Ingredient.objects.exclude(category="").values_list("category", flat=True).distinct().order_by("category"))
     return render(
@@ -92,8 +125,32 @@ def recipe_edit(request, pk=None):
             "units": Unit.choices,
             "suggested_ingredients": suggested_ingredients,
             "suggested_categories": suggested_categories,
+            "imported_image_path": imported_image_path,
         },
     )
+
+
+def recipe_import(request):
+    if request.method == "POST":
+        url = request.POST.get("url", "").strip()
+        raw_text = request.POST.get("raw_text", "").strip()
+        
+        try:
+            if url:
+                imported = parse_recipe_url(url)
+            elif raw_text:
+                imported = parse_recipe_text(raw_text)
+            else:
+                messages.error(request, "Please provide either a URL or raw text.")
+                return render(request, "recipes/recipe_import.html")
+                
+            request.session["imported_recipe"] = imported
+            messages.success(request, "Recipe imported successfully! Please review and save it.")
+            return redirect("recipe_create")
+        except Exception as e:
+            messages.error(request, f"Error importing recipe: {str(e)}")
+            
+    return render(request, "recipes/recipe_import.html")
 
 
 def planner(request):

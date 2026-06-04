@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.13
+
+- Add Recipe Importer supporting scraping from web URLs (using `recipe-scrapers`) and copy-pasting raw recipe text.
+- Implement Smart Rule-Based Parser to automatically extract ingredient names, notes, quantities, and units.
+- Support pre-populating and editing imported recipe data before saving, including downloading and previewing recipe images.
+
 ## 0.1.12
 
 - Add dynamic autocomplete suggestions for ingredient names and aisles in recipe creation/edit forms.

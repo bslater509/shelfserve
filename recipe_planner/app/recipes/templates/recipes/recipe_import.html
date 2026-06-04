@@ -1,0 +1,40 @@
+{% extends "recipes/base.html" %}
+{% block title %}Import Recipe - ShelfServe{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <h1>Import Recipe</h1>
+  <a class="button" href="{% url 'recipe_list' %}">Back to list</a>
+</section>
+
+<div class="grid two">
+  <section class="panel">
+    <h2>Option 1: Import from Web URL</h2>
+    <p class="muted">Paste a link to any recipe page (e.g. BBC Good Food, Allrecipes, Serious Eats). ShelfServe will automatically scrape the details, ingredients, and instructions.</p>
+    <form id="recipe-import-url-form" method="post" class="form-layout">
+      {% csrf_token %}
+      <label for="import-url-input">
+        Recipe Website URL
+        <input type="url" id="import-url-input" name="url" placeholder="https://example.com/some-great-recipe" required>
+      </label>
+      <div class="actions">
+        <button class="button primary" id="import-url-submit-button" type="submit">Import URL</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Option 2: Import from Raw Text</h2>
+    <p class="muted">Copy and paste recipe text. Separate ingredients and instructions with clear headers like "Ingredients" and "Instructions" for best results.</p>
+    <form id="recipe-import-text-form" method="post" class="form-layout">
+      {% csrf_token %}
+      <label for="import-text-input">
+        Raw Recipe Text
+        <textarea id="import-text-input" name="raw_text" rows="10" placeholder="Ingredients:&#10;1 cup flour&#10;2 eggs&#10;&#10;Instructions:&#10;Mix together and bake..." required></textarea>
+      </label>
+      <div class="actions">
+        <button class="button primary" id="import-text-submit-button" type="submit">Import Text</button>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}
