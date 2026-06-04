@@ -15,6 +15,7 @@ Keep these binary files in the repo unless replacing them intentionally.
 
 - `repository.yaml`: Home Assistant add-on repository metadata.
 - `recipe_planner/config.yaml`: Add-on metadata and ingress configuration.
+- `recipe_planner/CHANGELOG.md`: Home Assistant add-on changelog shown for add-on updates.
 - `recipe_planner/Dockerfile`: Add-on image build.
 - `recipe_planner/run.sh`: Container startup, migrations, static collection, and Gunicorn.
 - `recipe_planner/app/shelfserve/settings.py`: Django settings.
@@ -44,6 +45,7 @@ Always provide the user with a clear way to apply repository changes in Home Ass
 When handing off changes, include the relevant update path:
 
 - Before any git push intended to update the Home Assistant add-on, bump `recipe_planner/config.yaml` `version` so Home Assistant can detect the new build.
+- For every Home Assistant add-on update, add a user-facing entry to `recipe_planner/CHANGELOG.md` before pushing.
 - If the add-on was installed from GitHub, commit and push the repo changes, then in Home Assistant go to **Settings > Add-ons > Add-on Store**, open the three-dot menu, choose **Check for updates**, then update or reinstall **ShelfServe**.
 - If Home Assistant does not show an update, confirm the pushed commit includes a bumped `recipe_planner/config.yaml` `version`, check for updates again, then rebuild/update the add-on.
 - If testing locally with the add-on repository mounted or copied into Home Assistant, reload the add-on store, rebuild/reinstall the add-on, and restart **ShelfServe**.
@@ -72,7 +74,7 @@ gunicorn shelfserve.wsgi:application --bind 0.0.0.0:${SHELFSERVE_PORT}
 ## Coding Guidelines
 
 - Before analyzing the repository or making changes, run `git status --short` and `git pull` so the local workspace is up to date. If the working tree already has local changes, inspect them first and avoid overwriting user work.
-- After making any intended repo changes, commit and git push them so Home Assistant can update from the remote repository. For Home Assistant add-on updates, bump `recipe_planner/config.yaml` `version` before pushing.
+- After making any intended repo changes, commit and git push them so Home Assistant can update from the remote repository. For Home Assistant add-on updates, bump `recipe_planner/config.yaml` `version` and update `recipe_planner/CHANGELOG.md` before pushing.
 - Preserve the existing Django structure and simple server-rendered templates.
 - Keep Home Assistant ingress compatibility in mind for every link, form action, static asset, and media URL.
 - Store persistent runtime data under the add-on `/data` volume through `SHELFSERVE_DATA_DIR`; do not write persistent user data into the app directory.
