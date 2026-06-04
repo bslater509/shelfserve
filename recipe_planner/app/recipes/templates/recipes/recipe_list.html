@@ -1,4 +1,5 @@
 {% extends "recipes/base.html" %}
+{% load recipe_extras %}
 {% block title %}Recipes - ShelfServe{% endblock %}
 {% block content %}
 <section class="toolbar">
@@ -17,7 +18,7 @@
     <article class="recipe-card">
       <a href="{{ recipe.get_absolute_url }}">
         {% if recipe.image %}
-          <img src="{{ recipe.image.url }}" alt="">
+          <img src="{% ingress_url request recipe.image.url %}" alt="">
         {% else %}
           <div class="image-placeholder">{{ recipe.title|first }}</div>
         {% endif %}

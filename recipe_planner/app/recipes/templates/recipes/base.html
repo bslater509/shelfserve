@@ -1,11 +1,17 @@
-{% load static %}
+{% load static recipe_extras %}
 <!doctype html>
 <html lang="en-gb">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% if request.META.SCRIPT_NAME %}
+  <base href="{{ request.META.SCRIPT_NAME }}/">
+  {% else %}
+  <base href="/">
+  {% endif %}
   <title>{% block title %}ShelfServe{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'recipes/app.css' %}">
+  {% static 'recipes/app.css' as app_css_url %}
+  <link rel="stylesheet" href="{% ingress_url request app_css_url %}">
 </head>
 <body>
   <header class="topbar">
