@@ -18,7 +18,7 @@ Keep these binary files in the repo unless replacing them intentionally.
 - `recipe_planner/Dockerfile`: Add-on image build.
 - `recipe_planner/run.sh`: Container startup, migrations, static collection, and Gunicorn.
 - `recipe_planner/app/shelfserve/settings.py`: Django settings.
-- `recipe_planner/app/shelfserve/middleware.py`: Home Assistant ingress path handling.
+- `recipe_planner/app/shelfserve/middleware.py`: Home Assistant ingress path and forwarded-origin handling.
 - `recipe_planner/app/recipes/`: Main Django application.
 - `recipe_planner/app/recipes/static/recipes/app.css`: App styling.
 - `recipe_planner/app/recipes/templates/recipes/`: HTML templates.
@@ -34,6 +34,8 @@ Use Django helpers where possible:
 - Model file/image `.url` values for uploaded media.
 
 If changing URL, static, or media handling, verify the page through Home Assistant ingress. A raw, unstyled HTML page usually means static assets are resolving outside the ingress path.
+
+Django's CSRF origin checks must also work through ingress. `recipe_planner/app/shelfserve/middleware.py` normalizes missing forwarded host and protocol metadata from the request `Origin` header when `X-Ingress-Path` is present, so Django compares POST requests against the Home Assistant URL rather than the internal add-on backend host.
 
 ## Home Assistant Update Path
 
@@ -83,5 +85,6 @@ Before handing off changes:
 
 - Run `python manage.py check`.
 - Run targeted Django tests when behavior changes.
+- For ingress CSRF changes, run the CSRF-enforcing regression tests in `recipes.tests`.
 - Confirm generated HTML uses the Home Assistant ingress path for navigation and assets.
 - For add-on metadata changes, confirm `recipe_planner/config.yaml` remains valid YAML.
