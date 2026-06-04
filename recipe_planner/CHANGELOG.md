@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.11
+
+- Add new premium glow-morphic style logo and icon for ShelfServe server and Home Assistant add-on dashboard.
+
 ## 0.1.10
 
 - Replace basic text area supermarket aisle editor with interactive row-based editor supporting reordering, addition, and deletion.
