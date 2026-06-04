@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.15
+
+- Overhaul weekly planner page with a fully interactive, responsive grid layout.
+- Replace simple select dropdowns with a visual overlay modal supporting search and tags.
+- Add quick action planning tools, including Random Auto-fill, Clear Week, and Clear Day.
+- Implement GET-parameter-driven "Copy Previous Week" draft-generation flow for previewing and editing before saving.
+- Enhance planner aesthetics with premium Outfit Google Typography, glassmorphism visual feedback, transition animations, and custom inline SVGs.
+- Optimize HTML payload by rendering the list of cookbook recipes exactly once inside the visual selection modal rather than repeating options for each slot.
+
 ## 0.1.14
 
 - Migrate recipe instructions from a single plain-text field to a structured database-backed `RecipeStep` table.

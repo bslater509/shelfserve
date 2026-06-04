@@ -20,7 +20,7 @@ body {
   margin: 0;
   background: var(--page);
   color: var(--ink);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: 'Outfit', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 16px;
   line-height: 1.45;
 }
@@ -338,36 +338,606 @@ textarea {
   height: 42px;
 }
 
-.planner-grid {
-  display: grid;
-  grid-template-columns: minmax(86px, .55fr) repeat(3, minmax(180px, 1fr));
+/* Overhauled Planner Page Grid & Tools */
+.planner-grid-wrapper {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  overflow-x: auto;
-  margin-top: 14px;
+  margin-top: 20px;
 }
 
-.planner-head,
-.day-label,
-.meal-cell {
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+.planner-table-header {
+  display: grid;
+  grid-template-columns: 140px repeat(3, 1fr);
+  gap: 12px;
+  padding: 0 8px;
+}
+
+.grid-header-cell {
+  font-weight: 700;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 8px;
+}
+
+.planner-day-row {
+  display: grid;
+  grid-template-columns: 140px repeat(3, 1fr);
+  gap: 12px;
+  background: transparent;
+  align-items: stretch;
+}
+
+.day-label-cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
   background: #ffffff;
-  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  transition: transform 0.2s ease, border-color 0.2s ease;
 }
 
-.day-label span {
-  display: block;
+.day-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.day-name {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.day-date {
+  font-size: 0.9rem;
   color: var(--muted);
 }
 
-.meal-cell {
+.btn-clear-day {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 2px 0;
+  margin-top: 12px;
+  transition: color 0.15s ease;
+}
+
+.btn-clear-day:hover {
+  color: #8c3b24;
+  text-decoration: underline;
+}
+
+/* Meal Cell Containers */
+.meal-cell-container {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  position: relative;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.meal-cell-container:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 12px rgba(47, 111, 97, 0.08);
+  transform: translateY(-2px);
+}
+
+.meal-state-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.add-meal-trigger {
+  background: transparent;
+  border: 2px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  width: 100%;
+  min-height: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.add-meal-trigger:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--soft);
+}
+
+.add-icon {
   display: grid;
+  place-items: center;
+  color: var(--muted);
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.add-meal-trigger:hover .add-icon {
+  transform: scale(1.15);
+  color: var(--primary);
+}
+
+/* Mini Card style (Occupied State) */
+.meal-state-filled {
+  width: 100%;
+  height: 100%;
+}
+
+.meal-card-mini {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.meal-card-thumb-container {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.meal-card-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.meal-card-thumb-placeholder {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--primary);
+}
+
+.meal-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.meal-card-top {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.meal-card-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+
+.meal-card-title:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.meal-card-bottom {
+  display: flex;
+  align-items: center;
+}
+
+.servings-counter-widget {
+  display: inline-flex;
+  align-items: center;
+  background: var(--soft);
+  border-radius: 6px;
+  padding: 2px;
+  border: 1px solid var(--line);
+}
+
+.btn-servings-action {
+  background: transparent;
+  border: none;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 700;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+
+.btn-servings-action:hover {
+  background: #ffffff;
+  color: var(--primary);
+}
+
+.servings-count-display {
+  font-size: 0.8rem;
+  font-weight: 700;
+  min-width: 16px;
+  text-align: center;
+  color: var(--primary);
+  margin: 0 4px;
+}
+
+.btn-remove-meal-action {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 1.3rem;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.btn-remove-meal-action:hover {
+  background: #fdf2f2;
+  color: var(--accent);
+  transform: scale(1.1);
+}
+
+/* Tools Bar Styling */
+.planner-tools {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.tool-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.icon-inline {
+  width: 1.15em;
+  height: 1.15em;
+  vertical-align: middle;
+  fill: currentColor;
+}
+
+.accent-button-style {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+
+.accent-button-style:hover {
+  background: #fdf5f3 !important;
+}
+
+.danger-button-style {
+  border-color: #e57373 !important;
+  color: #e57373 !important;
+}
+
+.danger-button-style:hover {
+  background: #ffebee !important;
+  border-color: #ef5350 !important;
+  color: #ef5350 !important;
+}
+
+.large-button-style {
+  font-size: 1.05rem !important;
+  padding: 12px 24px !important;
+  font-weight: 700 !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 6px rgba(47, 111, 97, 0.15);
+  transition: all 0.2s ease !important;
+}
+
+.large-button-style:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 12px rgba(47, 111, 97, 0.25);
+}
+
+.planner-actions-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: 24px;
+  margin-bottom: 32px;
+}
+
+/* Supermarket Selector styling */
+.list-generation-panel {
+  background: linear-gradient(135deg, #ffffff 0%, var(--soft) 100%);
+  border: 1px solid var(--line);
+}
+
+.selector-with-button {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  max-width: 480px;
+}
+
+.premium-select {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+}
+
+/* Premium Recipe Selection Modal Styling */
+.premium-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.premium-modal.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(32, 33, 36, 0.4);
+  backdrop-filter: blur(4px);
+}
+
+.modal-wrapper {
+  position: relative;
+  width: min(650px, 92%);
+  max-height: 80vh;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  transform: translateY(20px);
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.premium-modal.is-open .modal-wrapper {
+  transform: translateY(0);
+}
+
+.modal-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 80vh;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-headline {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.modal-subheading {
+  margin: 4px 0 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  font-size: 1.8rem;
+  cursor: pointer;
+  color: var(--muted);
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  transition: background 0.15s ease, color 0.15s ease;
+  line-height: 1;
+}
+
+.modal-close-btn:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.modal-search-wrapper {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--page);
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
-.meal-cell input {
-  max-width: 92px;
+.search-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+#modal-search-field {
+  border: none;
+  background: transparent;
+  padding: 4px 0;
+  width: 100%;
+  outline: none;
+  font-size: 1rem;
+}
+
+#modal-search-field:focus {
+  box-shadow: none;
+  border: none;
+}
+
+.modal-scroll-area {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-recipe-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.modal-recipe-card {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: #ffffff;
+}
+
+.modal-recipe-card:hover {
+  border-color: var(--primary);
+  background: var(--soft);
+  transform: translateX(4px);
+}
+
+.modal-card-thumbnail {
+  width: 60px;
+  height: 60px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--soft);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.modal-card-img-placeholder {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--primary);
+}
+
+.modal-card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.modal-card-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.servings-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--page);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+
+.modal-card-tags {
+  display: flex;
+  gap: 4px;
+}
+
+.mini-tag {
+  font-size: 0.75rem;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.modal-no-results {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 0;
+  text-align: center;
 }
 
 .shopping-section {
@@ -413,12 +983,68 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .planner-grid {
-    grid-template-columns: 82px repeat(3, minmax(170px, 1fr));
-  }
-
   h1 {
     font-size: 1.55rem;
+  }
+
+  /* Responsive Planner styles */
+  .planner-table-header {
+    display: none;
+  }
+  
+  .planner-day-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 24px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 12px;
+    background: #ffffff;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+  }
+  
+  .day-label-cell {
+    flex-direction: row;
+    align-items: center;
+    border: none;
+    padding: 0 0 10px 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    box-shadow: none;
+  }
+  
+  .btn-clear-day {
+    margin-top: 0;
+  }
+  
+  .meal-cell-container {
+    min-height: auto;
+    padding: 12px;
+  }
+  
+  .meal-cell-container::before {
+    content: attr(data-slot-label);
+    font-size: 0.75rem;
+    font-weight: 800;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+    display: block;
+  }
+  
+  .planner-tools {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .tool-group {
+    justify-content: space-between;
+  }
+  
+  .tool-group .button {
+    flex: 1;
+    justify-content: center;
   }
 }
 

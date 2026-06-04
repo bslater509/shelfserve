@@ -1,63 +1,478 @@
 {% extends "recipes/base.html" %}
-{% load recipe_extras %}
+{% load static recipe_extras %}
 {% block title %}Planner - ShelfServe{% endblock %}
 {% block content %}
 <section class="toolbar">
   <div>
     <h1>Planner</h1>
-    <p class="muted">{{ week_start|date:"j M Y" }} - {{ days.6|date:"j M Y" }}</p>
+    <p class="muted font-outfit">{{ week_start|date:"j M Y" }} - {{ days.6|date:"j M Y" }}</p>
   </div>
   <div class="actions">
-    <a class="button" href="{% url 'planner' %}?week={{ previous_week|date:'Y-m-d' }}">Previous</a>
-    <a class="button" href="{% url 'planner' %}?week={{ next_week|date:'Y-m-d' }}">Next</a>
+    <a class="button" href="{% url 'planner' %}?week={{ previous_week|date:'Y-m-d' }}">
+      <svg class="icon-inline" viewBox="0 0 24 24"><path fill="currentColor" d="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"/></svg>
+      Previous week
+    </a>
+    <a class="button" href="{% url 'planner' %}?week={{ next_week|date:'Y-m-d' }}">
+      Next week
+      <svg class="icon-inline" viewBox="0 0 24 24"><path fill="currentColor" d="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z"/></svg>
+    </a>
   </div>
 </section>
 
-<form method="post" class="planner-form">
-  {% csrf_token %}
-  <div class="planner-grid">
-    <div class="planner-head"></div>
-    {% for slot,label in meal_slots %}
-      <div class="planner-head">{{ label }}</div>
-    {% endfor %}
-    {% for day in days %}
-      <div class="day-label">
-        <strong>{{ day|date:"D" }}</strong>
-        <span>{{ day|date:"j M" }}</span>
-      </div>
-      {% for slot,label in meal_slots %}
-        {% plan_key day slot as key %}
-        {% with entry=entries|get_item:key %}
-          <div class="meal-cell">
-            <select name="recipe_{{ day|date:'Y-m-d' }}_{{ slot }}">
-              <option value="">None</option>
-              {% for recipe in recipes %}
-                <option value="{{ recipe.pk }}" {% if entry and entry.recipe_id == recipe.pk %}selected{% endif %}>{{ recipe.title }}</option>
-              {% endfor %}
-            </select>
-            <input name="servings_{{ day|date:'Y-m-d' }}_{{ slot }}" type="number" min="1" value="{% if entry %}{{ entry.servings }}{% else %}1{% endif %}" aria-label="Servings">
-          </div>
-        {% endwith %}
-      {% endfor %}
-    {% endfor %}
+<!-- Planning Helper Toolbar -->
+<section class="planner-tools">
+  <div class="tool-group">
+    <a href="{% url 'planner' %}?week={{ week_start|date:'Y-m-d' }}&copy_from={{ previous_week|date:'Y-m-d' }}" class="button accent-button-style" title="Copy last week's meal plan to this week as a draft">
+      <svg class="icon-inline" viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+      Copy previous week
+    </a>
+    <button type="button" class="button" id="btn-random-fill" title="Fill all empty slots with random recipes">
+      <svg class="icon-inline" viewBox="0 0 24 24"><path fill="currentColor" d="M7.5 5.6L5 7 6.4 4.5 5 2l2.5 1.4L10 2 8.6 4.5 10 7 7.5 5.6M19.5 15.4L17 16.8l1.4-2.5L17 11.8l2.5 1.4 2.5-1.4-1.4 2.5 1.4 2.5-2.5-1.4M22 2l-1.4 2.5L22 7l-2.5-1.4L17 7l1.4-2.5L17 2l2.5 1.4L22 2M13.4 9.1L4.6 17.9c-.8.8-.8 2 0 2.8l1.8 1.8c.8.8 2 .8 2.8 0l8.8-8.8-4.6-4.6m5.2-1.3l-1.8-1.8c-.8-.8-2-.8-2.8 0l-1.2 1.2 4.6 4.6 1.2-1.2c.8-.8.8-2 0-2.8z"/></svg>
+      Random auto-fill
+    </button>
   </div>
-  <div class="actions">
-    <button class="button primary" type="submit">Save planner</button>
+  <div class="tool-group">
+    <button type="button" class="button danger-button-style" id="btn-clear-week" title="Remove all planned meals on this page">
+      <svg class="icon-inline" viewBox="0 0 24 24"><path fill="currentColor" d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12z"/></svg>
+      Clear week
+    </button>
+  </div>
+</section>
+
+<form method="post" class="planner-form" id="planner-main-form">
+  {% csrf_token %}
+  <div class="planner-grid-wrapper">
+    <div class="planner-table-header">
+      <div class="grid-header-cell">Day</div>
+      {% for slot, label in meal_slots %}
+        <div class="grid-header-cell">{{ label }}</div>
+      {% endfor %}
+    </div>
+
+    <div class="planner-table-body">
+      {% for day in days %}
+        <div class="planner-day-row" data-day-iso="{{ day|date:'Y-m-d' }}">
+          <div class="day-label-cell">
+            <div class="day-meta">
+              <strong class="day-name">{{ day|date:"D" }}</strong>
+              <span class="day-date">{{ day|date:"j M" }}</span>
+            </div>
+            <button type="button" class="btn-clear-day" title="Clear all meals for this day">
+              Clear
+            </button>
+          </div>
+
+          {% for slot, label in meal_slots %}
+            {% plan_key day slot as key %}
+            {% with entry=entries|get_item:key %}
+              <div class="meal-cell-container" data-day="{{ day|date:'Y-m-d' }}" data-slot="{{ slot }}" data-slot-label="{{ label }}">
+                <input type="hidden" name="recipe_{{ day|date:'Y-m-d' }}_{{ slot }}" value="{% if entry %}{{ entry.recipe_id }}{% endif %}" class="recipe-id-input">
+                <input type="hidden" name="servings_{{ day|date:'Y-m-d' }}_{{ slot }}" value="{% if entry %}{{ entry.servings }}{% else %}1{% endif %}" class="recipe-servings-input">
+                
+                <!-- Empty State Block -->
+                <div class="meal-state-empty" {% if entry %}style="display: none;"{% endif %}>
+                  <button type="button" class="add-meal-trigger">
+                    <span class="add-icon">
+                      <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"/></svg>
+                    </span>
+                    <span class="add-label">Add recipe</span>
+                  </button>
+                </div>
+
+                <!-- Filled State Block -->
+                <div class="meal-state-filled" {% if not entry %}style="display: none;"{% endif %}>
+                  <div class="meal-card-mini">
+                    <div class="meal-card-thumb-container">
+                      {% if entry.recipe.image %}
+                        <img src="{% ingress_url request entry.recipe.image.url %}" alt="" class="meal-card-thumb">
+                      {% else %}
+                        <div class="meal-card-thumb-placeholder">{{ entry.recipe.title|first }}</div>
+                      {% endif %}
+                    </div>
+                    <div class="meal-card-info">
+                      <div class="meal-card-top">
+                        <span class="meal-card-title">{% if entry %}{{ entry.recipe.title }}{% endif %}</span>
+                      </div>
+                      <div class="meal-card-bottom">
+                        <div class="servings-counter-widget">
+                          <button type="button" class="btn-servings-action btn-dec-servings" aria-label="Decrease servings">&minus;</button>
+                          <span class="servings-count-display">{% if entry %}{{ entry.servings }}{% else %}1{% endif %}</span>
+                          <button type="button" class="btn-servings-action btn-inc-servings" aria-label="Increase servings">&plus;</button>
+                        </div>
+                      </div>
+                    </div>
+                    <button type="button" class="btn-remove-meal-action" aria-label="Remove recipe from slot">&times;</button>
+                  </div>
+                </div>
+
+              </div>
+            {% endwith %}
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="planner-actions-footer">
+    <button class="button primary large-button-style" type="submit">
+      <svg class="icon-inline" viewBox="0 0 24 24"><path fill="currentColor" d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z"/></svg>
+      Save meal plan
+    </button>
   </div>
 </form>
 
-<section class="panel">
+<section class="panel list-generation-panel">
   <h2>Shopping list</h2>
+  <p class="muted font-outfit" style="margin: 0 0 16px 0;">Generate a custom supermarket-sorted checklist for this week's plan.</p>
   <form method="post" action="{% url 'generate_shopping_list' %}" class="inline-form">
     {% csrf_token %}
     <input type="hidden" name="week_start" value="{{ week_start|date:'Y-m-d' }}">
-    <select name="supermarket" required>
-      <option value="">Choose supermarket</option>
-      {% for supermarket in supermarkets %}
-        <option value="{{ supermarket.pk }}">{{ supermarket.name }}</option>
-      {% endfor %}
-    </select>
-    <button class="button" type="submit">Generate</button>
+    <div class="selector-with-button">
+      <select name="supermarket" required class="premium-select">
+        <option value="">Choose supermarket...</option>
+        {% for supermarket in supermarkets %}
+          <option value="{{ supermarket.pk }}">{{ supermarket.name }}</option>
+        {% endfor %}
+      </select>
+      <button class="button primary" type="submit">Generate list</button>
+    </div>
   </form>
 </section>
+
+<!-- Visual Recipe Selector Modal -->
+<div id="recipe-selector-modal" class="premium-modal" role="dialog" aria-modal="true" aria-hidden="true" style="display: none;">
+  <div class="modal-backdrop"></div>
+  <div class="modal-wrapper">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-headline">Select Recipe</h3>
+          <p class="modal-subheading muted" id="modal-slot-indicator">For Slot</p>
+        </div>
+        <button type="button" class="modal-close-btn" aria-label="Close dialog">&times;</button>
+      </div>
+      
+      <div class="modal-search-wrapper">
+        <svg class="search-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"/></svg>
+        <input type="search" id="modal-search-field" placeholder="Search by recipe title or tag..." autocomplete="off">
+      </div>
+
+      <div class="modal-scroll-area">
+        <div class="modal-recipe-grid">
+          {% for recipe in recipes %}
+            <div class="modal-recipe-card" 
+                 data-id="{{ recipe.pk }}" 
+                 data-title="{{ recipe.title|escapejs }}" 
+                 data-servings="{{ recipe.servings }}"
+                 data-image="{% if recipe.image %}{% ingress_url request recipe.image.url %}{% endif %}"
+                 data-tags="{% for tag in recipe.tags.all %}{{ tag.name|escapejs }} {% endfor %}">
+              
+              <div class="modal-card-thumbnail">
+                {% if recipe.image %}
+                  <img src="{% ingress_url request recipe.image.url %}" alt="" class="modal-card-img">
+                {% else %}
+                  <div class="modal-card-img-placeholder">{{ recipe.title|first }}</div>
+                {% endif %}
+              </div>
+              <div class="modal-card-body">
+                <h4 class="modal-card-title">{{ recipe.title }}</h4>
+                <div class="modal-card-meta">
+                  <span class="servings-badge">{{ recipe.servings }} Servings</span>
+                  <div class="modal-card-tags">
+                    {% for tag in recipe.tags.all %}
+                      <span class="mini-tag">{{ tag.name }}</span>
+                    {% endfor %}
+                  </div>
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+        <div class="modal-no-results" id="modal-no-results-msg" style="display: none;">
+          <svg viewBox="0 0 24 24" width="48" height="48" class="muted"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          <p>No recipes found matching that description.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const modal = document.getElementById('recipe-selector-modal');
+  const modalClose = modal.querySelector('.modal-close-btn');
+  const modalBackdrop = modal.querySelector('.modal-backdrop');
+  const searchInput = document.getElementById('modal-search-field');
+  const modalCards = modal.querySelectorAll('.modal-recipe-card');
+  const noResults = document.getElementById('modal-no-results-msg');
+  const slotIndicator = document.getElementById('modal-slot-indicator');
+
+  let activeCell = null;
+
+  // Modal Open Trigger
+  document.querySelectorAll('.add-meal-trigger').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      activeCell = e.currentTarget.closest('.meal-cell-container');
+      openModal();
+    });
+  });
+
+  // Also open modal on clicking the recipe details inside occupied cells
+  document.querySelectorAll('.meal-card-thumb-container, .meal-card-title').forEach(el => {
+    el.addEventListener('click', (e) => {
+      activeCell = e.currentTarget.closest('.meal-cell-container');
+      openModal();
+    });
+  });
+
+  function openModal() {
+    if (!activeCell) return;
+    const day = activeCell.dataset.day;
+    const slotLabel = activeCell.dataset.slotLabel;
+    
+    // Parse date for visual preview
+    const parsedDate = new Date(day);
+    const options = { weekday: 'long', day: 'numeric', month: 'short' };
+    const dateStr = parsedDate.toLocaleDateString('en-GB', options);
+    
+    slotIndicator.textContent = `${slotLabel} • ${dateStr}`;
+    
+    modal.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+    searchInput.value = '';
+    filterRecipes('');
+    setTimeout(() => {
+      modal.classList.add('is-open');
+      searchInput.focus();
+    }, 10);
+  }
+
+  function closeModal() {
+    modal.classList.remove('is-open');
+    document.body.style.overflow = '';
+    setTimeout(() => {
+      modal.style.display = 'none';
+      activeCell = null;
+    }, 250);
+  }
+
+  modalClose.addEventListener('click', closeModal);
+  modalBackdrop.addEventListener('click', closeModal);
+
+  // Close on Escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal.style.display === 'block') {
+      closeModal();
+    }
+  });
+
+  // Modal recipe live search
+  searchInput.addEventListener('input', (e) => {
+    filterRecipes(e.target.value);
+  });
+
+  function filterRecipes(query) {
+    const cleanQuery = query.trim().toLowerCase();
+    let visibleCount = 0;
+
+    modalCards.forEach(card => {
+      const title = card.dataset.title.toLowerCase();
+      const tags = card.dataset.tags.toLowerCase();
+
+      if (title.includes(cleanQuery) || tags.includes(cleanQuery)) {
+        card.style.display = '';
+        visibleCount++;
+      } else {
+        card.style.display = 'none';
+      }
+    });
+
+    noResults.style.display = visibleCount === 0 ? 'flex' : 'none';
+  }
+
+  // Handle Recipe Selection
+  modalCards.forEach(card => {
+    card.addEventListener('click', () => {
+      if (!activeCell) return;
+      
+      const recipeId = card.dataset.id;
+      const title = card.dataset.title;
+      const servings = card.dataset.servings || '4';
+      const imageUrl = card.dataset.image;
+
+      // Update hidden inputs
+      activeCell.querySelector('.recipe-id-input').value = recipeId;
+      activeCell.querySelector('.recipe-servings-input').value = servings;
+
+      // Update UI components
+      const filledState = activeCell.querySelector('.meal-state-filled');
+      const emptyState = activeCell.querySelector('.meal-state-empty');
+
+      // Update title
+      filledState.querySelector('.meal-card-title').textContent = title;
+      filledState.querySelector('.servings-count-display').textContent = servings;
+
+      // Update image
+      const thumbContainer = filledState.querySelector('.meal-card-thumb-container');
+      thumbContainer.innerHTML = '';
+      if (imageUrl) {
+        const img = document.createElement('img');
+        img.src = imageUrl;
+        img.className = 'meal-card-thumb';
+        img.alt = '';
+        thumbContainer.appendChild(img);
+      } else {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'meal-card-thumb-placeholder';
+        placeholder.textContent = title.charAt(0);
+        thumbContainer.appendChild(placeholder);
+      }
+
+      // Add click handlers on newly populated elements so user can click to change
+      filledState.querySelector('.meal-card-thumb-container').onclick = (e) => {
+        activeCell = e.currentTarget.closest('.meal-cell-container');
+        openModal();
+      };
+      filledState.querySelector('.meal-card-title').onclick = (e) => {
+        activeCell = e.currentTarget.closest('.meal-cell-container');
+        openModal();
+      };
+
+      // Toggle views
+      emptyState.style.display = 'none';
+      filledState.style.display = 'block';
+
+      closeModal();
+    });
+  });
+
+  // Handle servings changes
+  document.querySelectorAll('.meal-cell-container').forEach(cell => {
+    const servingsInput = cell.querySelector('.recipe-servings-input');
+    const servingsDisplay = cell.querySelector('.servings-count-display');
+
+    cell.querySelector('.btn-inc-servings').addEventListener('click', (e) => {
+      e.stopPropagation();
+      let val = parseInt(servingsInput.value) || 1;
+      val++;
+      servingsInput.value = val;
+      servingsDisplay.textContent = val;
+    });
+
+    cell.querySelector('.btn-dec-servings').addEventListener('click', (e) => {
+      e.stopPropagation();
+      let val = parseInt(servingsInput.value) || 1;
+      if (val > 1) {
+        val--;
+        servingsInput.value = val;
+        servingsDisplay.textContent = val;
+      }
+    });
+
+    // Handle Remove Action
+    cell.querySelector('.btn-remove-meal-action').addEventListener('click', (e) => {
+      e.stopPropagation();
+      clearCell(cell);
+    });
+  });
+
+  function clearCell(cell) {
+    cell.querySelector('.recipe-id-input').value = '';
+    cell.querySelector('.recipe-servings-input').value = '1';
+    cell.querySelector('.meal-state-filled').style.display = 'none';
+    cell.querySelector('.meal-state-empty').style.display = 'block';
+  }
+
+  // Clear Day Action
+  document.querySelectorAll('.btn-clear-day').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const row = e.currentTarget.closest('.planner-day-row');
+      row.querySelectorAll('.meal-cell-container').forEach(cell => {
+        clearCell(cell);
+      });
+    });
+  });
+
+  // Clear Week Action
+  const btnClearWeek = document.getElementById('btn-clear-week');
+  if (btnClearWeek) {
+    btnClearWeek.addEventListener('click', () => {
+      if (confirm('Are you sure you want to clear all recipes planned for this week?')) {
+        document.querySelectorAll('.meal-cell-container').forEach(cell => {
+          clearCell(cell);
+        });
+      }
+    });
+  }
+
+  // Random Auto-fill Action
+  const btnRandomFill = document.getElementById('btn-random-fill');
+  if (btnRandomFill) {
+    btnRandomFill.addEventListener('click', () => {
+      const emptyCells = Array.from(document.querySelectorAll('.meal-cell-container')).filter(cell => {
+        return !cell.querySelector('.recipe-id-input').value;
+      });
+
+      if (emptyCells.length === 0) {
+        alert('All slots are already filled!');
+        return;
+      }
+
+      if (modalCards.length === 0) {
+        alert('You do not have any recipes in your database to fill slots with. Create some first!');
+        return;
+      }
+
+      emptyCells.forEach(cell => {
+        // Pick a random recipe card from the modal cards
+        const randIndex = Math.floor(Math.random() * modalCards.length);
+        const card = modalCards[randIndex];
+        
+        const recipeId = card.dataset.id;
+        const title = card.dataset.title;
+        const servings = card.dataset.servings || '4';
+        const imageUrl = card.dataset.image;
+
+        // Apply to cell
+        cell.querySelector('.recipe-id-input').value = recipeId;
+        cell.querySelector('.recipe-servings-input').value = servings;
+
+        const filledState = cell.querySelector('.meal-state-filled');
+        const emptyState = cell.querySelector('.meal-state-empty');
+
+        filledState.querySelector('.meal-card-title').textContent = title;
+        filledState.querySelector('.servings-count-display').textContent = servings;
+
+        const thumbContainer = filledState.querySelector('.meal-card-thumb-container');
+        thumbContainer.innerHTML = '';
+        if (imageUrl) {
+          const img = document.createElement('img');
+          img.src = imageUrl;
+          img.className = 'meal-card-thumb';
+          img.alt = '';
+          thumbContainer.appendChild(img);
+        } else {
+          const placeholder = document.createElement('div');
+          placeholder.className = 'meal-card-thumb-placeholder';
+          placeholder.textContent = title.charAt(0);
+          thumbContainer.appendChild(placeholder);
+        }
+
+        // Click to modify handlers
+        filledState.querySelector('.meal-card-thumb-container').onclick = (e) => {
+          activeCell = e.currentTarget.closest('.meal-cell-container');
+          openModal();
+        };
+        filledState.querySelector('.meal-card-title').onclick = (e) => {
+          activeCell = e.currentTarget.closest('.meal-cell-container');
+          openModal();
+        };
+
+        emptyState.style.display = 'none';
+        filledState.style.display = 'block';
+      });
+    });
+  }
+});
+</script>
 {% endblock %}

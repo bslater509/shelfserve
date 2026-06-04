@@ -201,6 +201,8 @@ def planner(request):
     week_start = start_of_week(selected, settings.week_start)
     days = [week_start + timedelta(days=offset) for offset in range(7)]
     recipes = Recipe.objects.all()
+    copy_from_str = request.GET.get("copy_from")
+    copy_from_date = parse_date(copy_from_str)
 
     if request.method == "POST":
         MealPlanEntry.objects.filter(date__range=(days[0], days[-1])).delete()
@@ -219,10 +221,28 @@ def planner(request):
         messages.success(request, "Meal plan saved.")
         return redirect(f"{reverse('planner')}?week={week_start.isoformat()}")
 
-    entries = {
-        f"{entry.date.isoformat()}_{entry.meal_slot}": entry
-        for entry in MealPlanEntry.objects.filter(date__range=(days[0], days[-1])).select_related("recipe")
-    }
+    if copy_from_date:
+        copy_from_start = start_of_week(copy_from_date, settings.week_start)
+        entries = {}
+        for entry in MealPlanEntry.objects.filter(
+            date__range=(copy_from_start, copy_from_start + timedelta(days=6))
+        ).select_related("recipe"):
+            offset_days = (entry.date - copy_from_start).days
+            target_date = week_start + timedelta(days=offset_days)
+            copied_entry = MealPlanEntry(
+                date=target_date,
+                meal_slot=entry.meal_slot,
+                recipe=entry.recipe,
+                servings=entry.servings
+            )
+            entries[f"{target_date.isoformat()}_{entry.meal_slot}"] = copied_entry
+        messages.info(request, f"Previewing meals copied from week of {copy_from_start.strftime('%d %b %Y')}. Click 'Save planner' to keep them.")
+    else:
+        entries = {
+            f"{entry.date.isoformat()}_{entry.meal_slot}": entry
+            for entry in MealPlanEntry.objects.filter(date__range=(days[0], days[-1])).select_related("recipe")
+        }
+
     supermarkets = Supermarket.objects.all()
     return render(
         request,

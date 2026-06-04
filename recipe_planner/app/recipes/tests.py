@@ -650,3 +650,33 @@ class RecipePlannerTests(TestCase):
         self.assertIsNone(step1.duration_minutes)
         self.assertEqual(step2.text, "Bake for 30 minutes.")
         self.assertEqual(step2.duration_minutes, 30)
+
+    def test_planner_copy_week_preview(self):
+        settings = AppSetting.current()
+        settings.week_start = 0  # Monday
+        settings.save()
+
+        recipe = Recipe.objects.create(title="Tacos", servings=4)
+        
+        # Source week: June 1st, 2026 (Monday)
+        source_date = date(2026, 6, 1)
+        MealPlanEntry.objects.create(date=source_date, meal_slot="dinner", recipe=recipe, servings=4)
+
+        # Target week: June 8th, 2026 (Monday)
+        target_date = date(2026, 6, 8)
+
+        # Send GET request with copy_from parameter
+        response = self.client.get(
+            reverse("planner") + f"?week=2026-06-08&copy_from=2026-06-01"
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Verify that context includes the cloned entry mapped to the target date
+        entries = response.context["entries"]
+        key = f"2026-06-08_dinner"
+        self.assertIn(key, entries)
+        self.assertEqual(entries[key].recipe_id, recipe.pk)
+        self.assertEqual(entries[key].servings, 4)
+
+        # Verify that no entries were actually saved in the DB for the target week yet
+        self.assertFalse(MealPlanEntry.objects.filter(date=target_date).exists())
