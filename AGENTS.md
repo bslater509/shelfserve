@@ -65,9 +65,12 @@ python manage.py makemigrations --check --dry-run
 
 ## Local Docker Development
 
-ShelfServe can run as a local Docker container for development without Home Assistant. Build from the add-on directory so the same Dockerfile, dependencies, and `run.sh` startup path are used:
+ShelfServe can run as a local Docker container for development without Home Assistant. Build from the add-on directory so the same Dockerfile, dependencies, and `run.sh` startup path are used. 
+
+To start or recreate the container:
 
 ```powershell
+docker stop shelfserve-dev
 docker build `
   --build-arg BUILD_VERSION=dev `
   --build-arg BUILD_ARCH=amd64 `
@@ -80,6 +83,7 @@ Run the container with a local data volume mounted at `/data` and publish the ad
 ```powershell
 docker run --rm `
   --name shelfserve-dev `
+  -d `
   -p 8099:8099 `
   -e SHELFSERVE_SECRET_KEY=development-only-change-me `
   -e SHELFSERVE_DEBUG=1 `
@@ -90,7 +94,7 @@ docker run --rm `
 
 Open the local container at `http://127.0.0.1:8099/`. This local Docker mode does not simulate the generated Home Assistant ingress path, so continue to verify ingress-sensitive URL, static, media, and CSRF changes through Home Assistant before handing them off.
 
-When local Docker development is requested or already active, keep the `shelfserve-dev` container running at the end of the task unless the user explicitly asks to stop it. After code, template, static asset, dependency, Dockerfile, or startup-script changes that should be reflected in the local server, rebuild `shelfserve:dev`, recreate `shelfserve-dev`, and verify `http://127.0.0.1:8099/` returns HTTP 200 before handing off. If only docs, CI, or Home Assistant metadata changed, leave the running local container as-is and say that no server refresh was needed.
+When local Docker development is requested or already active, keep the `shelfserve-dev` container running at the end of the task unless the user explicitly asks to stop it. After any change to the repository (including code, templates, styles, assets, configuration, metadata, or docs), always rebuild `shelfserve:dev` and recreate the `shelfserve-dev` container, then verify `http://127.0.0.1:8099/` returns HTTP 200 before handing off.
 
 For add-on container behavior, inspect `recipe_planner/run.sh`. It runs:
 
