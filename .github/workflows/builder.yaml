@@ -4,14 +4,60 @@ on:
   push:
     branches:
       - main
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  local-docker-smoke:
+    name: Local Docker smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6.0.2
+
+      - name: Build local development image
+        run: |
+          docker build \
+            --build-arg BUILD_VERSION=dev \
+            --build-arg BUILD_ARCH=amd64 \
+            -t shelfserve:dev \
+            recipe_planner
+
+      - name: Run local development container
+        run: |
+          docker run -d \
+            --name shelfserve-dev \
+            -p 8099:8099 \
+            -e SHELFSERVE_SECRET_KEY=ci-local-docker-smoke \
+            -e SHELFSERVE_DEBUG=1 \
+            -e SHELFSERVE_LOG_LEVEL=debug \
+            -v shelfserve-dev-data:/data \
+            shelfserve:dev
+
+      - name: Wait for ShelfServe
+        run: |
+          for attempt in {1..60}; do
+            if curl --fail --silent --show-error http://127.0.0.1:8099/ > /tmp/shelfserve.html; then
+              exit 0
+            fi
+            docker logs shelfserve-dev
+            sleep 2
+          done
+          docker logs shelfserve-dev
+          exit 1
+
+      - name: Stop local development container
+        if: always()
+        run: |
+          docker rm -f shelfserve-dev || true
+
   build-app:
     name: Build ShelfServe
+    needs: local-docker-smoke
+    if: github.event_name != 'pull_request'
     permissions:
       contents: read
       id-token: write

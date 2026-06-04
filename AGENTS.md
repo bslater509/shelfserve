@@ -63,6 +63,33 @@ python manage.py test
 python manage.py makemigrations --check --dry-run
 ```
 
+## Local Docker Development
+
+ShelfServe can run as a local Docker container for development without Home Assistant. Build from the add-on directory so the same Dockerfile, dependencies, and `run.sh` startup path are used:
+
+```powershell
+docker build `
+  --build-arg BUILD_VERSION=dev `
+  --build-arg BUILD_ARCH=amd64 `
+  -t shelfserve:dev `
+  recipe_planner
+```
+
+Run the container with a local data volume mounted at `/data` and publish the add-on port:
+
+```powershell
+docker run --rm `
+  --name shelfserve-dev `
+  -p 8099:8099 `
+  -e SHELFSERVE_SECRET_KEY=development-only-change-me `
+  -e SHELFSERVE_DEBUG=1 `
+  -e SHELFSERVE_LOG_LEVEL=debug `
+  -v shelfserve-dev-data:/data `
+  shelfserve:dev
+```
+
+Open the local container at `http://127.0.0.1:8099/`. This local Docker mode does not simulate the generated Home Assistant ingress path, so continue to verify ingress-sensitive URL, static, media, and CSRF changes through Home Assistant before handing them off.
+
 For add-on container behavior, inspect `recipe_planner/run.sh`. It runs:
 
 ```sh
