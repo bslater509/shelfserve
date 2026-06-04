@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.16
+
+- Add dynamic Servings Stepper to Recipe detail page, allowing real-time client-side scaling of ingredient quantities.
+- Implement Decimal Step toggle next to servings stepper to enable 0.5-unit increments.
+- Add premium distraction-free fullscreen "Cook Mode" checklist overlay for kitchen use, hiding standard page navigation.
+- Support progress tracking with checked-step dimming and automatic completion status updates.
+- Embed active inline cooking timers synchronized perfectly between the Cook Mode checklist and the main recipe detail view.
+- Include a collapsible scaled Ingredients Drawer within Cook Mode for quick quantity verification.
+- Feature custom high-contrast Kitchen Night Mode (Dark Theme toggle) within Cook Mode overlay, persisting choice to local storage.
+
 ## 0.1.15
 
 - Overhaul weekly planner page with a fully interactive, responsive grid layout.
