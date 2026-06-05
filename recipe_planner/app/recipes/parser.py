@@ -1,115 +1,158 @@
+import io
+import logging
 import re
 import uuid
 import urllib.request
 from decimal import Decimal
 from pathlib import Path
+
 from django.conf import settings
+from PIL import Image, UnidentifiedImageError
 from recipe_scrapers import scrape_me
-from recipes.models import Unit, Ingredient
 
-# Map unicode fraction characters to Decimal values
+from recipes.models import Ingredient, Unit
+
+
+logger = logging.getLogger(__name__)
+MAX_RECIPE_IMAGE_BYTES = 5 * 1024 * 1024
+RECIPE_IMAGE_FORMATS = {
+    "JPEG": "jpg",
+    "PNG": "png",
+    "WEBP": "webp",
+}
+
 UNICODE_FRACTIONS = {
-    '½': 0.5, '⅓': 0.33, '⅔': 0.67, '¼': 0.25, '¾': 0.75, 
-    '⅛': 0.125, '⅜': 0.375, '⅝': 0.625, '⅞': 0.875
+    "\u00bd": Decimal("0.5"),
+    "\u2153": Decimal("0.3333333333"),
+    "\u2154": Decimal("0.6666666667"),
+    "\u00bc": Decimal("0.25"),
+    "\u00be": Decimal("0.75"),
+    "\u215b": Decimal("0.125"),
+    "\u215c": Decimal("0.375"),
+    "\u215d": Decimal("0.625"),
+    "\u215e": Decimal("0.875"),
 }
+UNICODE_FRACTION_PATTERN = "".join(re.escape(char) for char in UNICODE_FRACTIONS)
 
-# Standard unit mapping to Unit model choices
 UNIT_MAPPING = {
-    'g': Unit.GRAM,
-    'gram': Unit.GRAM,
-    'grams': Unit.GRAM,
-    
-    'kg': Unit.KILOGRAM,
-    'kilogram': Unit.KILOGRAM,
-    'kilograms': Unit.KILOGRAM,
-    
-    'ml': Unit.MILLILITRE,
-    'milliliter': Unit.MILLILITRE,
-    'milliliters': Unit.MILLILITRE,
-    'millilitre': Unit.MILLILITRE,
-    'millilitres': Unit.MILLILITRE,
-    
-    'l': Unit.LITRE,
-    'liter': Unit.LITRE,
-    'liters': Unit.LITRE,
-    'litre': Unit.LITRE,
-    'litres': Unit.LITRE,
-    
-    'tsp': Unit.TEASPOON,
-    'tsp.': Unit.TEASPOON,
-    'teaspoon': Unit.TEASPOON,
-    'teaspoons': Unit.TEASPOON,
-    
-    'tbsp': Unit.TABLESPOON,
-    'tbsp.': Unit.TABLESPOON,
-    'tablespoon': Unit.TABLESPOON,
-    'tablespoons': Unit.TABLESPOON,
-    
-    'pack': Unit.PACK,
-    'packs': Unit.PACK,
-    'package': Unit.PACK,
-    'packages': Unit.PACK,
-    'box': Unit.PACK,
-    'boxes': Unit.PACK,
-    'can': Unit.PACK,
-    'cans': Unit.PACK,
-    'tin': Unit.PACK,
-    'tins': Unit.PACK,
-    'bag': Unit.PACK,
-    'bags': Unit.PACK,
-    'carton': Unit.PACK,
-    'cartons': Unit.PACK,
-    'bottle': Unit.PACK,
-    'bottles': Unit.PACK,
-    'jar': Unit.PACK,
-    'jars': Unit.PACK,
+    "g": Unit.GRAM,
+    "gram": Unit.GRAM,
+    "grams": Unit.GRAM,
+    "kg": Unit.KILOGRAM,
+    "kilogram": Unit.KILOGRAM,
+    "kilograms": Unit.KILOGRAM,
+    "ml": Unit.MILLILITRE,
+    "milliliter": Unit.MILLILITRE,
+    "milliliters": Unit.MILLILITRE,
+    "millilitre": Unit.MILLILITRE,
+    "millilitres": Unit.MILLILITRE,
+    "l": Unit.LITRE,
+    "liter": Unit.LITRE,
+    "liters": Unit.LITRE,
+    "litre": Unit.LITRE,
+    "litres": Unit.LITRE,
+    "tsp": Unit.TEASPOON,
+    "tsp.": Unit.TEASPOON,
+    "teaspoon": Unit.TEASPOON,
+    "teaspoons": Unit.TEASPOON,
+    "tbsp": Unit.TABLESPOON,
+    "tbsp.": Unit.TABLESPOON,
+    "tablespoon": Unit.TABLESPOON,
+    "tablespoons": Unit.TABLESPOON,
+    "pack": Unit.PACK,
+    "packs": Unit.PACK,
+    "package": Unit.PACK,
+    "packages": Unit.PACK,
+    "box": Unit.PACK,
+    "boxes": Unit.PACK,
+    "can": Unit.PACK,
+    "cans": Unit.PACK,
+    "tin": Unit.PACK,
+    "tins": Unit.PACK,
+    "bag": Unit.PACK,
+    "bags": Unit.PACK,
+    "carton": Unit.PACK,
+    "cartons": Unit.PACK,
+    "bottle": Unit.PACK,
+    "bottles": Unit.PACK,
+    "jar": Unit.PACK,
+    "jars": Unit.PACK,
 }
 
-# Common non-standard units that map to Unit.ITEM but should have unit name stored in note
 NON_STANDARD_UNITS = {
-    'cup': 'cup', 'cups': 'cup',
-    'clove': 'clove', 'cloves': 'clove',
-    'pinch': 'pinch', 'pinches': 'pinch',
-    'slice': 'slice', 'slices': 'slice',
-    'piece': 'piece', 'pieces': 'piece',
-    'head': 'head', 'heads': 'head',
-    'bunch': 'bunch', 'bunches': 'bunch',
-    'stalk': 'stalk', 'stalks': 'stalk',
-    'can': 'can', 'cans': 'can',
-    'tin': 'tin', 'tins': 'tin',
-    'bottle': 'bottle', 'bottles': 'bottle',
-    'jar': 'jar', 'jars': 'jar',
+    "cup": "cup",
+    "cups": "cup",
+    "clove": "clove",
+    "cloves": "clove",
+    "pinch": "pinch",
+    "pinches": "pinch",
+    "slice": "slice",
+    "slices": "slice",
+    "piece": "piece",
+    "pieces": "piece",
+    "head": "head",
+    "heads": "head",
+    "bunch": "bunch",
+    "bunches": "bunch",
+    "stalk": "stalk",
+    "stalks": "stalk",
+    "can": "can",
+    "cans": "can",
+    "tin": "tin",
+    "tins": "tin",
+    "bottle": "bottle",
+    "bottles": "bottle",
+    "jar": "jar",
+    "jars": "jar",
 }
+
 
 def download_recipe_image(image_url):
-    """Downloads recipe image and returns the relative path inside MEDIA_ROOT."""
+    """Download a verified recipe image and return its path inside MEDIA_ROOT."""
     if not image_url:
         return ""
+
     try:
         req = urllib.request.Request(
-            image_url, 
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            image_url,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
         )
         with urllib.request.urlopen(req, timeout=10) as response:
-            image_data = response.read()
-        
+            raw_content_type = response.headers.get("Content-Type")
+            content_type = response.headers.get_content_type() if raw_content_type else ""
+            if content_type and not content_type.startswith("image/"):
+                logger.warning("Recipe image download skipped due to content type: %s", content_type)
+                return ""
+            image_data = response.read(MAX_RECIPE_IMAGE_BYTES + 1)
+
+        if len(image_data) > MAX_RECIPE_IMAGE_BYTES:
+            logger.warning("Recipe image download skipped because it exceeded %s bytes", MAX_RECIPE_IMAGE_BYTES)
+            return ""
+
+        try:
+            with Image.open(io.BytesIO(image_data)) as image:
+                image.verify()
+                image_format = image.format
+        except UnidentifiedImageError:
+            logger.warning("Recipe image download skipped because the response was not a valid image")
+            return ""
+
+        ext = RECIPE_IMAGE_FORMATS.get(image_format)
+        if not ext:
+            logger.warning("Recipe image download skipped due to unsupported image format: %s", image_format)
+            return ""
+
         media_recipes_dir = Path(settings.MEDIA_ROOT) / "recipes"
         media_recipes_dir.mkdir(parents=True, exist_ok=True)
-        
-        ext = "jpg"
-        if ".png" in image_url.lower():
-            ext = "png"
-        elif ".webp" in image_url.lower():
-            ext = "webp"
-            
+
         filename = f"imported_{uuid.uuid4().hex}.{ext}"
         file_path = media_recipes_dir / filename
         file_path.write_bytes(image_data)
         return f"recipes/{filename}"
-    except Exception as e:
-        # Ignore and log failures, recipe will just have no image
-        print(f"Failed to download image {image_url}: {e}")
+    except Exception as exc:
+        logger.warning("Failed to download recipe image from %s: %s", image_url, exc)
         return ""
+
 
 def parse_servings(yields):
     """Robustly parse servings/yields count into an integer."""
@@ -117,130 +160,106 @@ def parse_servings(yields):
         return 4
     if isinstance(yields, (int, float)):
         return max(1, int(yields))
-    match = re.search(r'\d+', str(yields))
+    match = re.search(r"\d+", str(yields))
     if match:
         return max(1, int(match.group()))
     return 4
 
+
 def parse_ingredient_line(line):
-    """Parses a single ingredient string into structured fields using a Smart Rule-Based Parser."""
+    """Parse a single ingredient string into structured fields."""
     line = line.strip()
     if not line:
         return None
-        
-    quantity = Decimal('1.0')
+
+    quantity = Decimal("1.0")
     rest = line
-    
-    # 1. Extract Quantity at the start of string
-    # Check mixed unicode fractions e.g. "1 ½" or "1½"
-    mixed_unicode = re.match(r'^(\d+)\s*([½⅓⅔¼¾⅛⅜⅝⅞])', rest)
+
+    mixed_unicode = re.match(rf"^(\d+)\s*([{UNICODE_FRACTION_PATTERN}])", rest)
     if mixed_unicode:
         whole = int(mixed_unicode.group(1))
         frac_val = UNICODE_FRACTIONS[mixed_unicode.group(2)]
-        quantity = Decimal(str(whole + frac_val))
+        quantity = Decimal(whole) + frac_val
         rest = rest[mixed_unicode.end():].strip()
     else:
-        # Check unicode fraction alone e.g. "½"
-        unicode_frac = re.match(r'^([½⅓⅔¼¾⅛⅜⅝⅞])', rest)
+        unicode_frac = re.match(rf"^([{UNICODE_FRACTION_PATTERN}])", rest)
         if unicode_frac:
-            quantity = Decimal(str(UNICODE_FRACTIONS[unicode_frac.group(1)]))
+            quantity = UNICODE_FRACTIONS[unicode_frac.group(1)]
             rest = rest[unicode_frac.end():].strip()
         else:
-            # Check mixed standard fraction e.g. "1 1/2" or "1-1/2"
-            mixed_frac = re.match(r'^(\d+)\s*[- ]\s*(\d+)\s*/\s*(\d+)', rest)
+            mixed_frac = re.match(r"^(\d+)\s*[- ]\s*(\d+)\s*/\s*(\d+)", rest)
             if mixed_frac:
                 whole = int(mixed_frac.group(1))
                 num = int(mixed_frac.group(2))
                 den = int(mixed_frac.group(3))
-                quantity = Decimal(str(whole + num / den))
+                quantity = Decimal(whole) + (Decimal(num) / Decimal(den))
                 rest = rest[mixed_frac.end():].strip()
             else:
-                # Check standard fraction alone e.g. "1/2"
-                frac = re.match(r'^(\d+)\s*/\s*(\d+)', rest)
+                frac = re.match(r"^(\d+)\s*/\s*(\d+)", rest)
                 if frac:
                     num = int(frac.group(1))
                     den = int(frac.group(2))
-                    quantity = Decimal(str(num / den))
+                    quantity = Decimal(num) / Decimal(den)
                     rest = rest[frac.end():].strip()
                 else:
-                    # Check decimal/integer
-                    dec = re.match(r'^(\d+(?:\.\d+)?)', rest)
+                    dec = re.match(r"^(\d+(?:\.\d+)?)", rest)
                     if dec:
                         quantity = Decimal(dec.group(1))
                         rest = rest[dec.end():].strip()
-                        
-    # Clean leading 'x' or '-' or 'of' if quantity was extracted
-    if rest.lower().startswith('of '):
+
+    if rest.lower().startswith("of "):
         rest = rest[3:].strip()
-    elif rest.lower().startswith('x ') or rest.lower().startswith('- '):
+    elif rest.lower().startswith("x ") or rest.lower().startswith("- "):
         rest = rest[2:].strip()
-        
-    # 2. Extract Notes (parentheses or commas)
+
     note = ""
-    # Extract parentheses
-    paren_match = re.search(r'\(([^)]+)\)', rest)
+    paren_match = re.search(r"\(([^)]+)\)", rest)
     if paren_match:
         note = paren_match.group(1).strip()
         rest = rest.replace(paren_match.group(0), "").strip()
-        
-    # Extract comma note
+
     if "," in rest:
         parts = rest.split(",", 1)
         rest = parts[0].strip()
         comma_note = parts[1].strip()
-        if note:
-            note = f"{note}, {comma_note}"
-        else:
-            note = comma_note
-            
-    # 3. Extract Unit & Name
+        note = f"{note}, {comma_note}" if note else comma_note
+
     words = rest.split()
     unit = Unit.ITEM
     name = rest
-    
+
     if words:
-        first_word = words[0].lower().rstrip('.')
-        first_word_clean = re.sub(r'[^\w]', '', first_word)
-        
-        # Check standard units
+        first_word = words[0].lower().rstrip(".")
+        first_word_clean = re.sub(r"[^\w]", "", first_word)
+
         if first_word in UNIT_MAPPING:
             unit = UNIT_MAPPING[first_word]
             name = " ".join(words[1:])
         elif first_word_clean in UNIT_MAPPING:
             unit = UNIT_MAPPING[first_word_clean]
             name = " ".join(words[1:])
-        # Check non-standard units (which map to Unit.ITEM, unit stored in note)
         elif first_word in NON_STANDARD_UNITS:
             unit = Unit.ITEM
             non_std = NON_STANDARD_UNITS[first_word]
             name = " ".join(words[1:])
-            if note:
-                note = f"{non_std}, {note}"
-            else:
-                note = non_std
+            note = f"{non_std}, {note}" if note else non_std
         elif first_word_clean in NON_STANDARD_UNITS:
             unit = Unit.ITEM
             non_std = NON_STANDARD_UNITS[first_word_clean]
             name = " ".join(words[1:])
-            if note:
-                note = f"{non_std}, {note}"
-            else:
-                note = non_std
+            note = f"{non_std}, {note}" if note else non_std
 
-        # Clean trailing/leading connector words (e.g. "of")
         if name.lower().startswith("of "):
             name = name[3:].strip()
-            
-    # 4. Lookup category from existing database ingredients
+
     category = ""
     if name:
         existing = Ingredient.objects.filter(name__iexact=name).first()
         if existing:
             category = existing.category
-            
-    # Round quantity to 2 decimals
-    quantity = quantity.quantize(Decimal('0.01'))
-    
+
+    quantity = quantity.quantize(Decimal("0.01"))
+
     return {
         "name": name,
         "quantity": str(quantity),
@@ -249,40 +268,37 @@ def parse_ingredient_line(line):
         "category": category,
     }
 
+
 def extract_step_duration(text):
-    """Uses regex to look for time mentions like '15 minutes' or '1 hour' and returns duration in minutes."""
+    """Look for time mentions like '15 minutes' or '1 hour' and return minutes."""
     if not text:
         return None
-    # 1. Hour + minute pattern: e.g., "1 hour 30 minutes" or "1 hr 30 mins"
     hr_min_match = re.search(
-        r'\b(\d+)\s*(?:hour|hr)s?\s*(?:and\s*)?(\d+)\s*(?:min|minute)s?\b', 
-        text, 
-        re.IGNORECASE
+        r"\b(\d+)\s*(?:hour|hr)s?\s*(?:and\s*)?(\d+)\s*(?:min|minute)s?\b",
+        text,
+        re.IGNORECASE,
     )
     if hr_min_match:
         return int(hr_min_match.group(1)) * 60 + int(hr_min_match.group(2))
-        
-    # 2. Hours only pattern: e.g., "1 hour" or "2 hrs"
-    hr_match = re.search(r'\b(\d+)\s*(?:hour|hr)s?\b', text, re.IGNORECASE)
+
+    hr_match = re.search(r"\b(\d+)\s*(?:hour|hr)s?\b", text, re.IGNORECASE)
     if hr_match:
         return int(hr_match.group(1)) * 60
-        
-    # 3. Minutes only pattern: e.g., "15 minutes" or "10 mins"
-    min_match = re.search(r'\b(\d+)\s*(?:min|minute)s?\b', text, re.IGNORECASE)
+
+    min_match = re.search(r"\b(\d+)\s*(?:min|minute)s?\b", text, re.IGNORECASE)
     if min_match:
         return int(min_match.group(1))
-        
+
     return None
 
 
 def parse_recipe_url(url):
-    """Scrapes a recipe URL using recipe-scrapers library."""
+    """Scrape a recipe URL using recipe-scrapers."""
     scraper = scrape_me(url)
-    
+
     title = scraper.title()
     servings = parse_servings(scraper.yields())
-    
-    # Process instructions
+
     instructions = scraper.instructions()
     raw_steps = []
     if isinstance(instructions, list):
@@ -294,92 +310,85 @@ def parse_recipe_url(url):
             if text:
                 raw_steps.append(text)
     else:
-        # Split by newlines if it's a single string
-        raw_steps = [s.strip() for s in str(instructions or "").splitlines() if s.strip()]
-        
+        raw_steps = [step.strip() for step in str(instructions or "").splitlines() if step.strip()]
+
     steps = []
-    for s in raw_steps:
-        duration = extract_step_duration(s)
-        steps.append({
-            "text": s,
-            "duration_minutes": duration
-        })
-        
-    # Process ingredients
-    raw_ingredients = scraper.ingredients()
+    for step in raw_steps:
+        steps.append(
+            {
+                "text": step,
+                "duration_minutes": extract_step_duration(step),
+            }
+        )
+
     ingredients = []
-    for line in raw_ingredients:
+    for line in scraper.ingredients():
         parsed = parse_ingredient_line(line)
         if parsed:
             ingredients.append(parsed)
-            
-    # Download image
-    image_rel_path = download_recipe_image(scraper.image())
-    
-    # Extract tags
+
     tags = []
     keywords = scraper.keywords()
     if isinstance(keywords, list):
         tags.extend(keywords)
     elif isinstance(keywords, str):
-        tags.extend([t.strip() for t in keywords.split(",") if t.strip()])
-        
+        tags.extend([tag.strip() for tag in keywords.split(",") if tag.strip()])
+
     category = scraper.category()
     if isinstance(category, str):
-        tags.extend([t.strip() for t in category.split(",") if t.strip()])
-        
-    clean_tags = sorted(list(set([t.lower().strip() for t in tags if t.strip()])))[:5]
-    
+        tags.extend([tag.strip() for tag in category.split(",") if tag.strip()])
+
+    clean_tags = sorted({tag.lower().strip() for tag in tags if tag.strip()})[:5]
+
     return {
         "title": title,
         "servings": servings,
         "steps": steps,
         "ingredients": ingredients,
         "tags_list": clean_tags,
-        "image_path": image_rel_path,
+        "image_path": download_recipe_image(scraper.image()),
     }
 
+
 def parse_recipe_text(text):
-    """Parses raw text copy-paste input, splitting it into ingredients and instructions."""
+    """Parse raw copy-pasted recipe text into ingredients and instructions."""
     lines = [line.strip() for line in text.splitlines()]
-    
+
     title = "Imported Recipe"
     servings = 4
     ingredients = []
     steps_list = []
-    
-    # We default to state=1 (Ingredients) as they usually come first
     state = 1
-    
+
     for line in lines:
         if not line:
             continue
-            
+
         line_lower = line.lower()
-        # Header check: match clean whole words to avoid sub-string hits like "Mix ingredients"
-        line_clean = re.sub(r'[^\w\s]', '', line_lower).strip()
+        line_clean = re.sub(r"[^\w\s]", "", line_lower).strip()
         if line_clean in ["ingredients", "ingredient", "ingredients list", "ingredient list", "shopping list"]:
             state = 1
             continue
-        elif line_clean in ["instructions", "instruction", "directions", "direction", "steps", "step", "method", "preparation"]:
+        if line_clean in ["instructions", "instruction", "directions", "direction", "steps", "step", "method", "preparation"]:
             state = 2
             continue
-            
+
         if state == 1:
             parsed = parse_ingredient_line(line)
             if parsed:
                 ingredients.append(parsed)
         elif state == 2:
             steps_list.append(line)
-            
+
     steps = []
     for line in steps_list:
-        duration = extract_step_duration(line)
-        steps.append({
-            "text": line,
-            "duration_minutes": duration
-        })
-    
+        steps.append(
+            {
+                "text": line,
+                "duration_minutes": extract_step_duration(line),
+            }
+        )
+
     return {
         "title": title,
         "servings": servings,

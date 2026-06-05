@@ -12,11 +12,11 @@
     {{ form.non_field_errors }}
     <label>Title {{ form.title }}</label>
     <label>Image {{ form.image }}
-      {% if imported_image_path %}
+      {% if imported_image_path and imported_image_url %}
         <div class="imported-image-preview" style="margin-top: 8px;">
           <input type="hidden" name="imported_image_path" value="{{ imported_image_path }}">
           <span class="muted" style="font-weight: normal; display: block; margin-bottom: 4px;">Imported image pre-selected:</span>
-          <img src="{% ingress_url request '/media/'|add:imported_image_path %}" style="max-height: 120px; border-radius: 6px; display: block; border: 1px solid var(--line);">
+          <img src="{% ingress_url request imported_image_url %}" style="max-height: 120px; border-radius: 6px; display: block; border: 1px solid var(--line);">
         </div>
       {% endif %}
     </label>
@@ -45,8 +45,8 @@
           <input name="ingredient_category" value="{{ item.ingredient.category }}" placeholder="Aisle" list="ingredient-categories-datalist">
           <input name="ingredient_note" value="{{ item.note }}" placeholder="Optional">
           <div class="step-actions">
-            <button class="icon-button" type="button" data-move-up aria-label="Move row up">↑</button>
-            <button class="icon-button" type="button" data-move-down aria-label="Move row down">↓</button>
+            <button class="icon-button" type="button" data-move-up aria-label="Move row up">&uarr;</button>
+            <button class="icon-button" type="button" data-move-down aria-label="Move row down">&darr;</button>
             <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
           </div>
         </div>
@@ -62,8 +62,8 @@
           <input name="ingredient_category" placeholder="Aisle" list="ingredient-categories-datalist">
           <input name="ingredient_note" placeholder="Optional">
           <div class="step-actions">
-            <button class="icon-button" type="button" data-move-up aria-label="Move row up">↑</button>
-            <button class="icon-button" type="button" data-move-down aria-label="Move row down">↓</button>
+            <button class="icon-button" type="button" data-move-up aria-label="Move row up">&uarr;</button>
+            <button class="icon-button" type="button" data-move-down aria-label="Move row down">&darr;</button>
             <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
           </div>
         </div>
@@ -82,21 +82,21 @@
       </div>
       {% for item in steps %}
         <div class="step-row">
-          <input name="step_text" value="{{ item.text }}" required placeholder="e.g. Preheat oven to 180°C">
+          <input name="step_text" value="{{ item.text }}" required placeholder="e.g. Preheat oven to 180&deg;C">
           <input name="step_duration" value="{% if item.duration_minutes %}{{ item.duration_minutes }}{% endif %}" type="number" min="1" placeholder="Optional" style="max-width: 120px;">
           <div class="step-actions">
-            <button class="icon-button" type="button" data-move-up aria-label="Move step up">↑</button>
-            <button class="icon-button" type="button" data-move-down aria-label="Move step down">↓</button>
+            <button class="icon-button" type="button" data-move-up aria-label="Move step up">&uarr;</button>
+            <button class="icon-button" type="button" data-move-down aria-label="Move step down">&darr;</button>
             <button class="icon-button" type="button" data-remove-step aria-label="Remove step">x</button>
           </div>
         </div>
       {% empty %}
         <div class="step-row">
-          <input name="step_text" required placeholder="e.g. Preheat oven to 180°C">
+          <input name="step_text" required placeholder="e.g. Preheat oven to 180&deg;C">
           <input name="step_duration" type="number" min="1" placeholder="Optional" style="max-width: 120px;">
           <div class="step-actions">
-            <button class="icon-button" type="button" data-move-up aria-label="Move step up">↑</button>
-            <button class="icon-button" type="button" data-move-down aria-label="Move step down">↓</button>
+            <button class="icon-button" type="button" data-move-up aria-label="Move step up">&uarr;</button>
+            <button class="icon-button" type="button" data-move-down aria-label="Move step down">&darr;</button>
             <button class="icon-button" type="button" data-remove-step aria-label="Remove step">x</button>
           </div>
         </div>
@@ -122,8 +122,8 @@
     <input name="ingredient_category" placeholder="Aisle" list="ingredient-categories-datalist">
     <input name="ingredient_note" placeholder="Optional">
     <div class="step-actions">
-      <button class="icon-button" type="button" data-move-up aria-label="Move row up">↑</button>
-      <button class="icon-button" type="button" data-move-down aria-label="Move row down">↓</button>
+      <button class="icon-button" type="button" data-move-up aria-label="Move row up">&uarr;</button>
+      <button class="icon-button" type="button" data-move-down aria-label="Move row down">&darr;</button>
       <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
     </div>
   </div>
@@ -131,11 +131,11 @@
 
 <template id="step-template">
   <div class="step-row">
-    <input name="step_text" required placeholder="e.g. Preheat oven to 180°C">
+    <input name="step_text" required placeholder="e.g. Preheat oven to 180&deg;C">
     <input name="step_duration" type="number" min="1" placeholder="Optional" style="max-width: 120px;">
     <div class="step-actions">
-      <button class="icon-button" type="button" data-move-up aria-label="Move step up">↑</button>
-      <button class="icon-button" type="button" data-move-down aria-label="Move step down">↓</button>
+      <button class="icon-button" type="button" data-move-up aria-label="Move step up">&uarr;</button>
+      <button class="icon-button" type="button" data-move-down aria-label="Move step down">&darr;</button>
       <button class="icon-button" type="button" data-remove-step aria-label="Remove step">x</button>
     </div>
   </div>

@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
+from django.core.files.storage import default_storage
 from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponseBadRequest, HttpResponseRedirect, JsonResponse
@@ -66,6 +67,7 @@ def recipe_detail(request, pk):
 def recipe_edit(request, pk=None):
     recipe = get_object_or_404(Recipe, pk=pk) if pk else None
     imported_image_path = ""
+    imported_image_url = ""
     ingredients = []
     steps = []
 
@@ -75,7 +77,7 @@ def recipe_edit(request, pk=None):
         step_rows = parse_step_rows(request.POST)
         if form.is_valid() and ingredient_rows and step_rows:
             recipe = form.save(commit=False)
-            imported_img = request.POST.get("imported_image_path")
+            imported_img = valid_imported_image_path(request.POST.get("imported_image_path", ""))
             if imported_img and not request.FILES.get("image"):
                 recipe.image = imported_img
             recipe.save()
@@ -108,6 +110,8 @@ def recipe_edit(request, pk=None):
             messages.error(request, "Add at least one ingredient with a quantity.")
         if not step_rows:
             messages.error(request, "Add at least one instruction step.")
+        imported_image_path = valid_imported_image_path(request.POST.get("imported_image_path", ""))
+        imported_image_url = imported_image_media_url(imported_image_path)
     else:
         initial = {}
         imported_ingredients = []
@@ -120,7 +124,8 @@ def recipe_edit(request, pk=None):
                     "servings": imported.get("servings", 4),
                     "tags_text": ", ".join(imported.get("tags_list", [])),
                 }
-                imported_image_path = imported.get("image_path", "")
+                imported_image_path = valid_imported_image_path(imported.get("image_path", ""))
+                imported_image_url = imported_image_media_url(imported_image_path)
                 for ing in imported.get("ingredients", []):
                     imported_ingredients.append({
                         "ingredient": {
@@ -168,6 +173,7 @@ def recipe_edit(request, pk=None):
             "suggested_ingredients": suggested_ingredients,
             "suggested_categories": suggested_categories,
             "imported_image_path": imported_image_path,
+            "imported_image_url": imported_image_url,
         },
     )
 
@@ -474,6 +480,19 @@ def parse_date(value):
         return None
 
 
+def valid_imported_image_path(value):
+    value = str(value or "").strip().replace("\\", "/")
+    if not value.startswith("recipes/") or ".." in value.split("/"):
+        return ""
+    return value
+
+
+def imported_image_media_url(path):
+    if not path:
+        return ""
+    return default_storage.url(path)
+
+
 def parse_ingredient_rows(post_data):
     rows = []
     names = post_data.getlist("ingredient_name")
@@ -573,4 +592,3 @@ def save_recipe_steps(recipe, rows):
             duration_minutes=row["duration_minutes"],
             order=row["order"],
         )
-

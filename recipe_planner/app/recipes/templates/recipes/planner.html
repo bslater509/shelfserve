@@ -235,7 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const options = { weekday: 'long', day: 'numeric', month: 'short' };
     const dateStr = parsedDate.toLocaleDateString('en-GB', options);
     
-    slotIndicator.textContent = `${slotLabel} • ${dateStr}`;
+    slotIndicator.textContent = `${slotLabel} \u2022 ${dateStr}`;
     
     modal.style.display = 'block';
     document.body.style.overflow = 'hidden';

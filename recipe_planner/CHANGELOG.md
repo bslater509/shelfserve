@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.17
+
+- Fix unicode fraction parsing for imported ingredients.
+- Harden imported recipe image downloads with response size, content type, image format, and Pillow validation checks.
+- Clean up imported image preview URL handling for Home Assistant ingress.
+- Normalize recipe editor and supermarket aisle controls to stable ASCII-safe source text.
+
 ## 0.1.16
 
 - Add dynamic Servings Stepper to Recipe detail page, allowing real-time client-side scaling of ingredient quantities.

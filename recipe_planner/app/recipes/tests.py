@@ -1,12 +1,16 @@
+import io
+import os
 import shutil
 import tempfile
 from datetime import date
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.conf import settings as django_settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
+from PIL import Image
 
 from .models import (
     AppSetting,
@@ -25,6 +29,34 @@ from .views import start_of_week
 
 
 MEDIA_ROOT = tempfile.mkdtemp()
+
+
+class FakeHeaders:
+    def __init__(self, content_type):
+        self.content_type = content_type
+
+    def get(self, name, default=None):
+        if name.lower() == "content-type" and self.content_type:
+            return self.content_type
+        return default
+
+    def get_content_type(self):
+        return self.content_type
+
+
+class FakeUrlOpenResponse:
+    def __init__(self, content_type, payload):
+        self.headers = FakeHeaders(content_type)
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+    def read(self, size=-1):
+        return self.payload
 
 
 @override_settings(MEDIA_ROOT=MEDIA_ROOT)
@@ -527,10 +559,20 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(res["note"], "cup, sifted")
         
         # Test unicode fractions
-        res2 = parse_ingredient_line("1½ tsp salt")
+        res2 = parse_ingredient_line("1\u00bd tsp salt")
         self.assertEqual(res2["name"], "salt")
         self.assertEqual(res2["quantity"], "1.50")
         self.assertEqual(res2["unit"], Unit.TEASPOON)
+
+        res4 = parse_ingredient_line("\u00bd cup flour")
+        self.assertEqual(res4["name"], "flour")
+        self.assertEqual(res4["quantity"], "0.50")
+        self.assertEqual(res4["note"], "cup")
+
+        res5 = parse_ingredient_line("\u00bc tsp spice")
+        self.assertEqual(res5["name"], "spice")
+        self.assertEqual(res5["quantity"], "0.25")
+        self.assertEqual(res5["unit"], Unit.TEASPOON)
         
         # Test standard decimal & category lookup
         Ingredient.objects.create(name="chicken breast", category="Meat")
@@ -559,8 +601,6 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(res["steps"][0]["text"], "Melt butter.")
 
     def test_recipe_import_views_and_prepopulation(self):
-        from unittest.mock import patch
-        
         # 1. Test POST to recipe_import view with raw text
         mock_data = {
             "title": "Mocked Egg",
@@ -591,6 +631,7 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(get_response.status_code, 200)
         self.assertContains(get_response, "Mocked Egg")
         self.assertContains(get_response, "recipes/imported_mock.jpg")
+        self.assertContains(get_response, 'src="/media/recipes/imported_mock.jpg"')
         
         # The session variable should be cleared now
         self.assertNotIn("imported_recipe", self.client.session)
@@ -617,6 +658,88 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(post_response["Location"], recipe.get_absolute_url())
         self.assertEqual(recipe.image.name, "recipes/imported_mock.jpg")
         self.assertEqual(recipe.ingredients.count(), 1)
+
+    def test_imported_image_preview_uses_ingress_media_url(self):
+        session = self.client.session
+        session["imported_recipe"] = {
+            "title": "Mocked Soup",
+            "servings": 2,
+            "steps": [{"text": "Warm through.", "duration_minutes": None}],
+            "ingredients": [{"name": "stock", "quantity": "1.00", "unit": "item", "note": "", "category": ""}],
+            "tags_list": ["easy"],
+            "image_path": "recipes/imported_mock.jpg",
+        }
+        session.save()
+
+        response = self.client.get(
+            reverse("recipe_create"),
+            HTTP_X_INGRESS_PATH="/3975db7c_shelfserve",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'src="/3975db7c_shelfserve/media/recipes/imported_mock.jpg"')
+
+    def test_download_recipe_image_saves_verified_image(self):
+        from .parser import download_recipe_image
+
+        image_bytes = self.make_image_bytes()
+
+        with tempfile.TemporaryDirectory() as media_root:
+            with (
+                override_settings(MEDIA_ROOT=media_root),
+                patch("recipes.parser.urllib.request.urlopen", return_value=FakeUrlOpenResponse("image/png", image_bytes)),
+            ):
+                image_path = download_recipe_image("https://example.com/recipe.png")
+
+            self.assertTrue(image_path.startswith("recipes/imported_"))
+            self.assertTrue(image_path.endswith(".png"))
+            self.assertTrue(os.path.exists(os.path.join(media_root, image_path)))
+
+    def test_download_recipe_image_rejects_non_image_content_type(self):
+        from .parser import download_recipe_image
+
+        with tempfile.TemporaryDirectory() as media_root:
+            with (
+                override_settings(MEDIA_ROOT=media_root),
+                patch("recipes.parser.urllib.request.urlopen", return_value=FakeUrlOpenResponse("text/html", b"<html></html>")),
+            ):
+                image_path = download_recipe_image("https://example.com/recipe")
+
+            self.assertEqual(image_path, "")
+            self.assertFalse(os.path.exists(os.path.join(media_root, "recipes")))
+
+    def test_download_recipe_image_rejects_oversized_response(self):
+        from .parser import download_recipe_image
+
+        with tempfile.TemporaryDirectory() as media_root:
+            with (
+                override_settings(MEDIA_ROOT=media_root),
+                patch("recipes.parser.MAX_RECIPE_IMAGE_BYTES", 8),
+                patch("recipes.parser.urllib.request.urlopen", return_value=FakeUrlOpenResponse("image/png", b"x" * 9)),
+            ):
+                image_path = download_recipe_image("https://example.com/recipe.png")
+
+            self.assertEqual(image_path, "")
+            self.assertFalse(os.path.exists(os.path.join(media_root, "recipes")))
+
+    def test_download_recipe_image_rejects_invalid_image_bytes(self):
+        from .parser import download_recipe_image
+
+        with tempfile.TemporaryDirectory() as media_root:
+            with (
+                override_settings(MEDIA_ROOT=media_root),
+                patch("recipes.parser.urllib.request.urlopen", return_value=FakeUrlOpenResponse("image/png", b"not an image")),
+            ):
+                image_path = download_recipe_image("https://example.com/recipe.png")
+
+            self.assertEqual(image_path, "")
+            self.assertFalse(os.path.exists(os.path.join(media_root, "recipes")))
+
+    def make_image_bytes(self):
+        buffer = io.BytesIO()
+        image = Image.new("RGB", (1, 1), color="white")
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
 
     def test_extract_step_duration(self):
         from .parser import extract_step_duration

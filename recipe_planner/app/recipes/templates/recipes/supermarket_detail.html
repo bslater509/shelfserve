@@ -24,16 +24,16 @@
       {% for section in sections %}
         <div class="aisle-row">
           <input name="sections" value="{{ section.name }}" required>
-          <button class="icon-button" type="button" data-move-up aria-label="Move up">↑</button>
-          <button class="icon-button" type="button" data-move-down aria-label="Move down">↓</button>
+          <button class="icon-button" type="button" data-move-up aria-label="Move up">&uarr;</button>
+          <button class="icon-button" type="button" data-move-down aria-label="Move down">&darr;</button>
           <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
         </div>
       {% empty %}
         {% for default_aisle in default_aisles %}
           <div class="aisle-row">
             <input name="sections" value="{{ default_aisle }}" required>
-            <button class="icon-button" type="button" data-move-up aria-label="Move up">↑</button>
-            <button class="icon-button" type="button" data-move-down aria-label="Move down">↓</button>
+            <button class="icon-button" type="button" data-move-up aria-label="Move up">&uarr;</button>
+            <button class="icon-button" type="button" data-move-down aria-label="Move down">&darr;</button>
             <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
           </div>
         {% endfor %}
@@ -50,8 +50,8 @@
 <template id="aisle-template">
   <div class="aisle-row">
     <input name="sections" required>
-    <button class="icon-button" type="button" data-move-up aria-label="Move up">↑</button>
-    <button class="icon-button" type="button" data-move-down aria-label="Move down">↓</button>
+    <button class="icon-button" type="button" data-move-up aria-label="Move up">&uarr;</button>
+    <button class="icon-button" type="button" data-move-down aria-label="Move down">&darr;</button>
     <button class="icon-button" type="button" data-remove-row aria-label="Remove row">x</button>
   </div>
 </template>
