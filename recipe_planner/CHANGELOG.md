@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.19
+
+- Refresh the main ShelfServe interface with clearer navigation, active page states, and improved mobile wrapping.
+- Improve the dashboard with current-week meal counts, recent list progress, upcoming meals, and faster action links.
+- Add recipe tag filtering alongside search and polish recipe library empty states and cards.
+- Improve planner controls with a Today shortcut, clearer shopping-list generation action, and more efficient recipe picker data loading.
+- Improve shopping lists with a progress meter, per-section item counts, cleaner item metadata, and a hide-checked toggle.
+- Clean up everyday form pages and fix visible separator encoding issues.
+
 ## 0.1.18
 
 - Add shopping list regeneration that preserves checked generated items while refreshing quantities from the meal plan.

@@ -2,7 +2,10 @@
 {% block title %}Supermarkets - ShelfServe{% endblock %}
 {% block content %}
 <section class="toolbar">
-  <h1>Supermarkets</h1>
+  <div>
+    <h1>Supermarkets</h1>
+    <p class="muted">Keep aisle order matched to how each store is laid out.</p>
+  </div>
 </section>
 
 <section class="grid two">
@@ -14,12 +17,15 @@
   </form>
 
   <div class="panel">
-    <h2>Saved</h2>
+    <h2>Saved supermarkets</h2>
     <ul class="plain-list">
       {% for supermarket in supermarkets %}
-        <li><span>{{ supermarket.sections.count }} aisles</span><a href="{% url 'supermarket_detail' supermarket.pk %}">{{ supermarket.name }}</a></li>
+        <li>
+          <span>{{ supermarket.sections.count }} aisles</span>
+          <a href="{% url 'supermarket_detail' supermarket.pk %}">{{ supermarket.name }}</a>
+        </li>
       {% empty %}
-        <li>No supermarkets yet.</li>
+        <li><span>No supermarkets yet.</span><a href="#id_name">Add one</a></li>
       {% endfor %}
     </ul>
   </div>

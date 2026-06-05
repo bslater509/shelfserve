@@ -2,33 +2,36 @@
 {% block title %}Import Recipe - ShelfServe{% endblock %}
 {% block content %}
 <section class="toolbar">
-  <h1>Import Recipe</h1>
+  <div>
+    <h1>Import recipe</h1>
+    <p class="muted">Bring in a recipe from a website or pasted text, then review it before saving.</p>
+  </div>
   <a class="button" href="{% url 'recipe_list' %}">Back to list</a>
 </section>
 
 <div class="grid two">
   <section class="panel">
-    <h2>Option 1: Import from Web URL</h2>
-    <p class="muted">Paste a link to any recipe page (e.g. BBC Good Food, Allrecipes, Serious Eats). ShelfServe will automatically scrape the details, ingredients, and instructions.</p>
+    <h2>Import from web URL</h2>
+    <p class="muted">Paste a link to a recipe page. ShelfServe will fetch the details, ingredients, image, and instructions where the site supports it.</p>
     <form id="recipe-import-url-form" method="post" class="form-layout">
       {% csrf_token %}
       <label for="import-url-input">
-        Recipe Website URL
+        Recipe website URL
         <input type="url" id="import-url-input" name="url" placeholder="https://example.com/some-great-recipe" required>
       </label>
       <div class="actions">
-        <button class="button primary" id="import-url-submit-button" type="submit">Import URL</button>
+        <button class="button primary" id="import-url-submit-button" type="submit">Import from URL</button>
       </div>
     </form>
   </section>
 
   <section class="panel">
-    <h2>Option 2: Import from Raw Text</h2>
-    <p class="muted">Copy and paste recipe text. Separate ingredients and instructions with clear headers like "Ingredients" and "Instructions" for best results.</p>
+    <h2>Import from raw text</h2>
+    <p class="muted">Paste recipe text. Headers such as "Ingredients" and "Instructions" give the parser the best chance of separating the sections.</p>
     <form id="recipe-import-text-form" method="post" class="form-layout">
       {% csrf_token %}
       <label for="import-text-input">
-        Raw Recipe Text
+        Raw recipe text
         <textarea id="import-text-input" name="raw_text" rows="10" placeholder="Ingredients:&#10;1 cup flour&#10;2 eggs&#10;&#10;Instructions:&#10;Mix together and bake..." required></textarea>
       </label>
       <div class="actions">

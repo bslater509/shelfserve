@@ -5,18 +5,36 @@
 <section class="toolbar">
   <div>
     <h1>Recipes</h1>
-    <form class="search" method="get">
-      <input type="search" name="q" value="{{ query }}" placeholder="Search recipes">
-      <button class="button" type="submit">Search</button>
-    </form>
+    <p class="muted">{{ recipes|length }} shown{% if selected_tag %} in {{ selected_tag }}{% endif %}</p>
   </div>
-  <div style="display: flex; gap: 8px;">
+  <div class="actions">
     <a class="button" href="{% url 'recipe_import' %}">Import recipe</a>
     <a class="button primary" href="{% url 'recipe_create' %}">New recipe</a>
   </div>
 </section>
 
-<section class="cards">
+<section class="panel library-tools">
+  <form class="search library-search" method="get">
+    <input type="search" name="q" value="{{ query }}" placeholder="Search by title, ingredient, or tag">
+    {% if selected_tag %}<input type="hidden" name="tag" value="{{ selected_tag }}">{% endif %}
+    <button class="button primary" type="submit">Search</button>
+    {% if query or selected_tag %}
+      <a class="button" href="{% url 'recipe_list' %}">Clear</a>
+    {% endif %}
+  </form>
+
+  {% if tags %}
+    <div class="tag-filter-row" aria-label="Recipe tags">
+      {% for tag in tags %}
+        <a class="tag-filter {% if selected_tag == tag.name %}active{% endif %}" href="{% url 'recipe_list' %}?tag={{ tag.name|urlencode }}{% if query %}&q={{ query|urlencode }}{% endif %}">
+          {{ tag.name }} <span>{{ tag.recipe_count }}</span>
+        </a>
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>
+
+<section class="cards recipe-library-grid">
   {% for recipe in recipes %}
     <article class="recipe-card">
       <a href="{{ recipe.get_absolute_url }}">
@@ -26,18 +44,29 @@
           <div class="image-placeholder">{{ recipe.title|first }}</div>
         {% endif %}
         <div class="recipe-card-body">
-          <h2>{{ recipe.title }}</h2>
-          <p>{{ recipe.servings }} servings</p>
+          <div class="recipe-card-heading">
+            <h2>{{ recipe.title }}</h2>
+            <span>{{ recipe.servings }} servings</span>
+          </div>
           <div class="tags">
             {% for tag in recipe.tags.all %}
               <span>{{ tag.name }}</span>
+            {% empty %}
+              <span class="muted-tag">No tags</span>
             {% endfor %}
           </div>
         </div>
       </a>
     </article>
   {% empty %}
-    <p class="empty">No recipes found.</p>
+    <section class="panel empty-state">
+      <h2>No recipes found</h2>
+      <p class="empty">Try a different search, clear the filters, or add a new recipe.</p>
+      <div class="actions">
+        <a class="button" href="{% url 'recipe_list' %}">Clear filters</a>
+        <a class="button primary" href="{% url 'recipe_create' %}">New recipe</a>
+      </div>
+    </section>
   {% endfor %}
 </section>
 {% endblock %}

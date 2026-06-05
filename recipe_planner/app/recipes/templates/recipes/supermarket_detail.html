@@ -2,7 +2,10 @@
 {% block title %}{{ supermarket.name }} - ShelfServe{% endblock %}
 {% block content %}
 <section class="toolbar">
-  <h1>{{ supermarket.name }}</h1>
+  <div>
+    <h1>{{ supermarket.name }}</h1>
+    <p class="muted">{{ sections|length }} saved aisles</p>
+  </div>
   <a class="button" href="{% url 'supermarket_list' %}">All supermarkets</a>
 </section>
 

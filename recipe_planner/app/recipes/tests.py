@@ -22,6 +22,7 @@ from .models import (
     ShoppingListItem,
     Supermarket,
     SupermarketSection,
+    Tag,
     Unit,
 )
 from .services import build_shopping_list
@@ -672,6 +673,49 @@ class RecipePlannerTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "1/2")
+
+    def test_dashboard_uses_clean_list_separator(self):
+        supermarket = Supermarket.objects.create(name="Tesco")
+        shopping_list = ShoppingList.objects.create(supermarket=supermarket, week_start=date(2026, 6, 1))
+        ShoppingListItem.objects.create(
+            shopping_list=shopping_list,
+            section_name="Bakery",
+            ingredient_name="Bread",
+            quantity=Decimal("1"),
+            unit=Unit.ITEM,
+        )
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "&middot;", html=False)
+        self.assertNotContains(response, "Â·")
+
+    def test_recipe_list_filters_by_tag(self):
+        quick = Tag.objects.create(name="quick")
+        dinner = Tag.objects.create(name="dinner")
+        toast = Recipe.objects.create(title="Beans on toast", servings=2)
+        toast.tags.add(quick)
+        stew = Recipe.objects.create(title="Slow stew", servings=4)
+        stew.tags.add(dinner)
+
+        response = self.client.get(reverse("recipe_list") + "?tag=quick")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Beans on toast")
+        self.assertNotContains(response, "Slow stew")
+        self.assertEqual(list(response.context["recipes"]), [toast])
+
+    def test_recipe_list_combines_search_and_tag_filters(self):
+        quick = Tag.objects.create(name="quick")
+        Recipe.objects.create(title="Quick curry", servings=2).tags.add(quick)
+        Recipe.objects.create(title="Quick pasta", servings=2)
+
+        response = self.client.get(reverse("recipe_list") + "?q=quick&tag=quick")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Quick curry")
+        self.assertNotContains(response, "Quick pasta")
 
     def test_planner_links_latest_shopping_list_for_selected_week(self):
         supermarket = Supermarket.objects.create(name="Tesco")

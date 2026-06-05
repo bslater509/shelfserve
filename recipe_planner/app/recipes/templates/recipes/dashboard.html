@@ -4,30 +4,39 @@
 <section class="toolbar">
   <div>
     <h1>Dashboard</h1>
-    <p class="muted">Week starting {{ week_start|date:"D j M Y" }}</p>
+    <p class="muted">Week of {{ week_start|date:"D j M" }} to {{ week_end|date:"D j M Y" }}</p>
   </div>
   <div class="actions">
-    <a class="button primary" href="{% url 'recipe_create' %}">New recipe</a>
-    <a class="button" href="{% url 'planner' %}">Open planner</a>
+    <a class="button" href="{% url 'recipe_import' %}">Import recipe</a>
+    <a class="button primary" href="{% url 'planner' %}?week={{ week_start|date:'Y-m-d' }}">Plan this week</a>
   </div>
 </section>
 
-<section class="stats">
-  <div class="stat"><strong>{{ recipe_count }}</strong><span>Recipes</span></div>
-  <div class="stat"><strong>{{ supermarket_count }}</strong><span>Supermarkets</span></div>
+<section class="stats dashboard-stats">
+  <a class="stat stat-link" href="{% url 'recipe_list' %}"><strong>{{ recipe_count }}</strong><span>Recipes saved</span></a>
+  <a class="stat stat-link" href="{% url 'planner' %}?week={{ week_start|date:'Y-m-d' }}"><strong>{{ planned_this_week_count }}</strong><span>Meals planned this week</span></a>
+  <a class="stat stat-link" href="{% url 'supermarket_list' %}"><strong>{{ supermarket_count }}</strong><span>Supermarkets</span></a>
+  <div class="stat"><strong>{{ open_list_count }}</strong><span>Lists with items left</span></div>
 </section>
 
 <section class="grid two">
   <article class="panel">
-    <h2>Today</h2>
+    <div class="section-heading">
+      <h2>Today</h2>
+      <a href="{% url 'planner' %}?week={{ week_start|date:'Y-m-d' }}">Edit week</a>
+    </div>
     {% if today_entries %}
       <ul class="plain-list">
         {% for entry in today_entries %}
-          <li><span>{{ entry.get_meal_slot_display }}</span><a href="{{ entry.recipe.get_absolute_url }}">{{ entry.recipe.title }}</a></li>
+          <li>
+            <span>{{ entry.get_meal_slot_display }}</span>
+            <a href="{{ entry.recipe.get_absolute_url }}">{{ entry.recipe.title }}</a>
+          </li>
         {% endfor %}
       </ul>
     {% else %}
       <p class="empty">No meals planned today.</p>
+      <a class="button compact" href="{% url 'planner' %}?week={{ week_start|date:'Y-m-d' }}">Add meals</a>
     {% endif %}
   </article>
 
@@ -36,12 +45,34 @@
     {% if recent_lists %}
       <ul class="plain-list">
         {% for list in recent_lists %}
-          <li><span>{{ list.week_start|date:"j M" }} · {{ list.checked_items }}/{{ list.total_items }}</span><a href="{% url 'shopping_list_detail' list.pk %}">{{ list.supermarket.name }}</a></li>
+          <li>
+            <span>{{ list.week_start|date:"j M" }} &middot; {{ list.checked_items }}/{{ list.total_items }}</span>
+            <a href="{% url 'shopping_list_detail' list.pk %}">{{ list.supermarket.name }}</a>
+          </li>
         {% endfor %}
       </ul>
     {% else %}
       <p class="empty">No shopping lists yet.</p>
     {% endif %}
   </article>
+</section>
+
+<section class="panel dashboard-next">
+  <div class="section-heading">
+    <h2>Next meals</h2>
+    <a href="{% url 'recipe_create' %}">New recipe</a>
+  </div>
+  {% if upcoming_entries %}
+    <ul class="plain-list">
+      {% for entry in upcoming_entries %}
+        <li>
+          <span>{{ entry.date|date:"D j M" }} &middot; {{ entry.get_meal_slot_display }}</span>
+          <a href="{{ entry.recipe.get_absolute_url }}">{{ entry.recipe.title }}</a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty">Nothing else planned yet.</p>
+  {% endif %}
 </section>
 {% endblock %}

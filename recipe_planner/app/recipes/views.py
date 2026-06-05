@@ -34,21 +34,28 @@ def dashboard(request):
     today = date.today()
     settings = AppSetting.current()
     week_start = start_of_week(today, settings.week_start)
+    week_end = week_start + timedelta(days=6)
+    active_lists = ShoppingList.objects.select_related("supermarket").annotate(
+        total_items=Count("items"),
+        checked_items=Count("items", filter=Q(items__checked=True)),
+    )
     context = {
         "recipe_count": Recipe.objects.count(),
         "supermarket_count": Supermarket.objects.count(),
+        "planned_this_week_count": MealPlanEntry.objects.filter(date__range=(week_start, week_end)).count(),
+        "open_list_count": ShoppingList.objects.filter(items__checked=False).distinct().count(),
         "today_entries": MealPlanEntry.objects.filter(date=today).select_related("recipe"),
-        "recent_lists": ShoppingList.objects.select_related("supermarket").annotate(
-            total_items=Count("items"),
-            checked_items=Count("items", filter=Q(items__checked=True)),
-        )[:5],
+        "upcoming_entries": MealPlanEntry.objects.filter(date__gt=today).select_related("recipe")[:5],
+        "recent_lists": active_lists[:5],
         "week_start": week_start,
+        "week_end": week_end,
     }
     return render(request, "recipes/dashboard.html", context)
 
 
 def recipe_list(request):
     query = request.GET.get("q", "").strip()
+    selected_tag = normalise_tag_name(request.GET.get("tag", ""))
     recipes = Recipe.objects.prefetch_related("tags", "ingredients__ingredient")
     if query:
         recipes = recipes.filter(
@@ -56,7 +63,18 @@ def recipe_list(request):
             | Q(tags__name__icontains=query)
             | Q(ingredients__ingredient__name__icontains=query)
         ).distinct()
-    return render(request, "recipes/recipe_list.html", {"recipes": recipes, "query": query})
+    if selected_tag:
+        recipes = recipes.filter(tags__name__iexact=selected_tag).distinct()
+    return render(
+        request,
+        "recipes/recipe_list.html",
+        {
+            "recipes": recipes,
+            "query": query,
+            "selected_tag": selected_tag,
+            "tags": Tag.objects.annotate(recipe_count=Count("recipe")).filter(recipe_count__gt=0),
+        },
+    )
 
 
 def recipe_detail(request, pk):
@@ -209,7 +227,7 @@ def planner(request):
     selected = parse_date(request.GET.get("week")) or date.today()
     week_start = start_of_week(selected, settings.week_start)
     days = [week_start + timedelta(days=offset) for offset in range(7)]
-    recipes = Recipe.objects.all()
+    recipes = Recipe.objects.prefetch_related("tags")
     copy_from_str = request.GET.get("copy_from")
     copy_from_date = parse_date(copy_from_str)
 
@@ -270,6 +288,7 @@ def planner(request):
             "week_start": week_start,
             "previous_week": week_start - timedelta(days=7),
             "next_week": week_start + timedelta(days=7),
+            "today_week": start_of_week(date.today(), settings.week_start),
         },
     )
 

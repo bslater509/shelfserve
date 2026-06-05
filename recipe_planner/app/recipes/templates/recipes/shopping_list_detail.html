@@ -5,7 +5,7 @@
 <section class="toolbar">
   <div>
     <h1>{{ shopping_list.supermarket.name }}</h1>
-    <p class="muted">Week starting {{ shopping_list.week_start|date:"D j M Y" }} · {{ checked_items }}/{{ total_items }} checked</p>
+    <p class="muted">Week starting {{ shopping_list.week_start|date:"D j M Y" }} &middot; {{ checked_items }}/{{ total_items }} checked</p>
   </div>
   <div class="actions">
     <form method="post" action="{% url 'regenerate_shopping_list' shopping_list.pk %}">
@@ -16,11 +16,28 @@
   </div>
 </section>
 
-<div id="ajax-toast" class="message error toast-error" style="display: none; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.15);"></div>
+<section class="panel shopping-progress-panel">
+  <div>
+    <h2>Shopping progress</h2>
+    <p class="muted">{{ checked_items }} checked of {{ total_items }} total</p>
+  </div>
+  <div class="shopping-progress-meter" aria-label="{{ checked_items }} of {{ total_items }} checked">
+    <span style="width: {% if total_items %}{% widthratio checked_items total_items 100 %}{% else %}0{% endif %}%;"></span>
+  </div>
+  <label class="toggle-row">
+    <input type="checkbox" id="hide-checked-toggle">
+    <span>Hide checked items</span>
+  </label>
+</section>
+
+<div id="ajax-toast" class="message error toast-error"></div>
 
 {% for section, items in grouped_items %}
   <section class="panel shopping-section">
-    <h2>{{ section }}</h2>
+    <div class="section-heading">
+      <h2>{{ section }}</h2>
+      <span class="muted">{{ items|length }} items</span>
+    </div>
     <ul class="shopping-items">
       {% for item in items %}
         <li class="{% if item.checked %}checked{% endif %}">
@@ -30,8 +47,10 @@
           </form>
           <span class="amount">{{ item.quantity|quantity }} {{ item.unit }}</span>
           <span class="item-name">{{ item.ingredient_name }}</span>
-          {% if item.notes %}<span class="muted">{{ item.notes }}</span>{% endif %}
-          {% if item.is_custom %}<span class="custom-badge">Custom</span>{% endif %}
+          <div class="item-meta">
+            {% if item.notes %}<span class="muted">{{ item.notes }}</span>{% endif %}
+            {% if item.is_custom %}<span class="custom-badge">Custom</span>{% endif %}
+          </div>
           <details class="shopping-item-edit">
             <summary>Edit</summary>
             <form method="post" action="{% url 'edit_shopping_item' item.pk %}" class="shopping-edit-form">
@@ -76,7 +95,10 @@
     </ul>
   </section>
 {% empty %}
-  <p class="empty">No items on this list.</p>
+  <section class="panel empty-state">
+    <h2>No items on this list</h2>
+    <p class="empty">Regenerate the list from the planner or add one-off items below.</p>
+  </section>
 {% endfor %}
 
 <section class="panel shopping-section">
@@ -106,7 +128,7 @@
       </div>
       <div class="form-group notes">
         <label for="custom_notes">Notes</label>
-        <input id="custom_notes" name="notes" placeholder="Optional notes (e.g. beans)">
+        <input id="custom_notes" name="notes" placeholder="Optional notes">
       </div>
     </div>
     <div class="custom-item-actions">
@@ -131,6 +153,7 @@
   document.addEventListener("DOMContentLoaded", () => {
     const listContainer = document.body;
     const toast = document.getElementById("ajax-toast");
+    const hideCheckedToggle = document.getElementById("hide-checked-toggle");
     let toastTimeout;
 
     function showToast(message) {
@@ -140,6 +163,17 @@
       toastTimeout = setTimeout(() => {
         toast.style.display = "none";
       }, 4500);
+    }
+
+    function applyCheckedVisibility() {
+      const shouldHide = hideCheckedToggle && hideCheckedToggle.checked;
+      document.querySelectorAll(".shopping-items li.checked").forEach((item) => {
+        item.style.display = shouldHide ? "none" : "";
+      });
+    }
+
+    if (hideCheckedToggle) {
+      hideCheckedToggle.addEventListener("change", applyCheckedVisibility);
     }
 
     listContainer.addEventListener("submit", (event) => {
@@ -154,9 +188,9 @@
       const li = form.closest("li");
       const isChecked = li.classList.contains("checked");
 
-      // Optimistic UI update
       li.classList.toggle("checked");
       button.innerHTML = isChecked ? "" : "&#10003;";
+      applyCheckedVisibility();
 
       const csrfToken = form.querySelector("[name=csrfmiddlewaretoken]").value;
       fetch(form.action, {
@@ -181,6 +215,7 @@
           li.classList.remove("checked");
           button.innerHTML = "";
         }
+        applyCheckedVisibility();
       })
       .catch(error => {
         console.error("AJAX toggle failed:", error);
@@ -192,6 +227,7 @@
           li.classList.remove("checked");
           button.innerHTML = "";
         }
+        applyCheckedVisibility();
       });
     });
   });

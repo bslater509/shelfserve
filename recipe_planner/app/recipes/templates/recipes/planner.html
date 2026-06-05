@@ -12,6 +12,7 @@
       <svg class="icon-inline" viewBox="0 0 24 24"><path fill="currentColor" d="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"/></svg>
       Previous week
     </a>
+    <a class="button" href="{% url 'planner' %}?week={{ today_week|date:'Y-m-d' }}">Today</a>
     <a class="button" href="{% url 'planner' %}?week={{ next_week|date:'Y-m-d' }}">
       Next week
       <svg class="icon-inline" viewBox="0 0 24 24"><path fill="currentColor" d="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z"/></svg>
@@ -134,7 +135,7 @@
           <option value="{{ supermarket.pk }}">{{ supermarket.name }}</option>
         {% endfor %}
       </select>
-      <button class="button primary" type="submit">Generate list</button>
+        <button class="button primary" type="submit">Generate shopping list</button>
     </div>
   </form>
   {% if latest_lists_by_supermarket %}
@@ -157,8 +158,8 @@
     <div class="modal-content">
       <div class="modal-header">
         <div>
-          <h3 class="modal-headline">Select Recipe</h3>
-          <p class="modal-subheading muted" id="modal-slot-indicator">For Slot</p>
+          <h3 class="modal-headline">Select recipe</h3>
+          <p class="modal-subheading muted" id="modal-slot-indicator">For slot</p>
         </div>
         <button type="button" class="modal-close-btn" aria-label="Close dialog">&times;</button>
       </div>
