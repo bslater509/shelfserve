@@ -17,6 +17,14 @@
   <form class="search library-search" method="get">
     <input type="search" name="q" value="{{ query }}" placeholder="Search by title, ingredient, or tag">
     {% if selected_tag %}<input type="hidden" name="tag" value="{{ selected_tag }}">{% endif %}
+    <label class="inline-field">
+      <span>Sort</span>
+      <select name="sort">
+        {% for value, label in sort_options.items %}
+          <option value="{{ value }}"{% if sort == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <button class="button primary" type="submit">Search</button>
     {% if query or selected_tag %}
       <a class="button" href="{% url 'recipe_list' %}">Clear</a>
@@ -26,7 +34,7 @@
   {% if tags %}
     <div class="tag-filter-row" aria-label="Recipe tags">
       {% for tag in tags %}
-        <a class="tag-filter {% if selected_tag == tag.name %}active{% endif %}" href="{% url 'recipe_list' %}?tag={{ tag.name|urlencode }}{% if query %}&q={{ query|urlencode }}{% endif %}">
+        <a class="tag-filter {% if selected_tag == tag.name %}active{% endif %}" href="{% url 'recipe_list' %}?tag={{ tag.name|urlencode }}{% if query %}&q={{ query|urlencode }}{% endif %}{% if sort != 'title' %}&sort={{ sort|urlencode }}{% endif %}">
           {{ tag.name }} <span>{{ tag.recipe_count }}</span>
         </a>
       {% endfor %}

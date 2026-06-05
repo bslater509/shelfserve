@@ -5,7 +5,7 @@
 <section class="toolbar">
   <div>
     <h1>{{ shopping_list.supermarket.name }}</h1>
-    <p class="muted">Week starting {{ shopping_list.week_start|date:"D j M Y" }} &middot; {{ checked_items }}/{{ total_items }} checked</p>
+    <p class="muted">Week starting {{ shopping_list.week_start|date:"D j M Y" }} &middot; <span data-checked-count>{{ checked_items }}</span>/<span data-total-count>{{ total_items }}</span> checked</p>
   </div>
   <div class="actions">
     <form method="post" action="{% url 'regenerate_shopping_list' shopping_list.pk %}">
@@ -19,28 +19,31 @@
 <section class="panel shopping-progress-panel">
   <div>
     <h2>Shopping progress</h2>
-    <p class="muted">{{ checked_items }} checked of {{ total_items }} total</p>
+    <p class="muted"><span data-checked-count>{{ checked_items }}</span> checked of <span data-total-count>{{ total_items }}</span> total</p>
   </div>
   <div class="shopping-progress-meter" aria-label="{{ checked_items }} of {{ total_items }} checked">
-    <span style="width: {% if total_items %}{% widthratio checked_items total_items 100 %}{% else %}0{% endif %}%;"></span>
+    <span id="shopping-progress-fill" style="width: {% if total_items %}{% widthratio checked_items total_items 100 %}{% else %}0{% endif %}%;"></span>
   </div>
-  <label class="toggle-row">
-    <input type="checkbox" id="hide-checked-toggle">
-    <span>Hide checked items</span>
-  </label>
+  <div class="shopping-progress-controls">
+    <input type="search" id="shopping-filter" placeholder="Filter items" autocomplete="off">
+    <label class="toggle-row">
+      <input type="checkbox" id="hide-checked-toggle">
+      <span>Hide checked items</span>
+    </label>
+  </div>
 </section>
 
 <div id="ajax-toast" class="message error toast-error"></div>
 
 {% for section, items in grouped_items %}
-  <section class="panel shopping-section">
+  <section class="panel shopping-section" data-shopping-section>
     <div class="section-heading">
       <h2>{{ section }}</h2>
       <span class="muted">{{ items|length }} items</span>
     </div>
     <ul class="shopping-items">
       {% for item in items %}
-        <li class="{% if item.checked %}checked{% endif %}">
+        <li class="{% if item.checked %}checked{% endif %}" data-shopping-row data-filter-text="{{ item.ingredient_name }} {{ item.notes }} {{ item.section_name }} {{ item.unit }}">
           <form method="post" action="{% url 'toggle_shopping_item' item.pk %}">
             {% csrf_token %}
             <button class="check-button" type="submit" aria-label="Toggle item">{% if item.checked %}&#10003;{% endif %}</button>
@@ -101,6 +104,8 @@
   </section>
 {% endfor %}
 
+<p class="empty hidden" id="shopping-empty-filter">No shopping items match the current filter.</p>
+
 <section class="panel shopping-section">
   <h2>Add custom item</h2>
   <form method="post" action="{% url 'add_shopping_item' shopping_list.pk %}" class="custom-item-form">
@@ -154,6 +159,10 @@
     const listContainer = document.body;
     const toast = document.getElementById("ajax-toast");
     const hideCheckedToggle = document.getElementById("hide-checked-toggle");
+    const shoppingFilter = document.getElementById("shopping-filter");
+    const progressFill = document.getElementById("shopping-progress-fill");
+    const emptyFilter = document.getElementById("shopping-empty-filter");
+    const storageKey = "shelfserve-hide-checked-{{ shopping_list.pk }}";
     let toastTimeout;
 
     function showToast(message) {
@@ -167,13 +176,56 @@
 
     function applyCheckedVisibility() {
       const shouldHide = hideCheckedToggle && hideCheckedToggle.checked;
-      document.querySelectorAll(".shopping-items li.checked").forEach((item) => {
-        item.style.display = shouldHide ? "none" : "";
+      const term = shoppingFilter ? shoppingFilter.value.trim().toLowerCase() : "";
+      let visibleRows = 0;
+
+      document.querySelectorAll("[data-shopping-row]").forEach((item) => {
+        const matchesText = item.dataset.filterText.toLowerCase().includes(term);
+        const hiddenByChecked = shouldHide && item.classList.contains("checked");
+        const shouldShow = matchesText && !hiddenByChecked;
+        item.hidden = !shouldShow;
+        if (shouldShow) {
+          visibleRows += 1;
+        }
       });
+
+      document.querySelectorAll("[data-shopping-section]").forEach((section) => {
+        const hasVisibleRows = Boolean(section.querySelector("[data-shopping-row]:not([hidden])"));
+        section.hidden = !hasVisibleRows;
+      });
+
+      if (emptyFilter) {
+        emptyFilter.classList.toggle("hidden", visibleRows !== 0 || (!term && !shouldHide));
+      }
+    }
+
+    function updateProgress() {
+      const rows = Array.from(document.querySelectorAll("[data-shopping-row]"));
+      const checked = rows.filter((row) => row.classList.contains("checked")).length;
+      const total = rows.length;
+      const percent = total ? Math.round((checked / total) * 100) : 0;
+
+      document.querySelectorAll("[data-checked-count]").forEach((element) => {
+        element.textContent = checked;
+      });
+      document.querySelectorAll("[data-total-count]").forEach((element) => {
+        element.textContent = total;
+      });
+      if (progressFill) {
+        progressFill.style.width = `${percent}%`;
+      }
     }
 
     if (hideCheckedToggle) {
-      hideCheckedToggle.addEventListener("change", applyCheckedVisibility);
+      hideCheckedToggle.checked = localStorage.getItem(storageKey) === "1";
+      hideCheckedToggle.addEventListener("change", () => {
+        localStorage.setItem(storageKey, hideCheckedToggle.checked ? "1" : "0");
+        applyCheckedVisibility();
+      });
+    }
+
+    if (shoppingFilter) {
+      shoppingFilter.addEventListener("input", applyCheckedVisibility);
     }
 
     listContainer.addEventListener("submit", (event) => {
@@ -190,6 +242,7 @@
 
       li.classList.toggle("checked");
       button.innerHTML = isChecked ? "" : "&#10003;";
+      updateProgress();
       applyCheckedVisibility();
 
       const csrfToken = form.querySelector("[name=csrfmiddlewaretoken]").value;
@@ -215,6 +268,7 @@
           li.classList.remove("checked");
           button.innerHTML = "";
         }
+        updateProgress();
         applyCheckedVisibility();
       })
       .catch(error => {
@@ -227,9 +281,13 @@
           li.classList.remove("checked");
           button.innerHTML = "";
         }
+        updateProgress();
         applyCheckedVisibility();
       });
     });
+
+    updateProgress();
+    applyCheckedVisibility();
   });
 </script>
 {% endblock %}

@@ -16,7 +16,11 @@
   <a class="stat stat-link" href="{% url 'recipe_list' %}"><strong>{{ recipe_count }}</strong><span>Recipes saved</span></a>
   <a class="stat stat-link" href="{% url 'planner' %}?week={{ week_start|date:'Y-m-d' }}"><strong>{{ planned_this_week_count }}</strong><span>Meals planned this week</span></a>
   <a class="stat stat-link" href="{% url 'supermarket_list' %}"><strong>{{ supermarket_count }}</strong><span>Supermarkets</span></a>
-  <div class="stat"><strong>{{ open_list_count }}</strong><span>Lists with items left</span></div>
+  {% if first_open_list %}
+    <a class="stat stat-link" href="{% url 'shopping_list_detail' first_open_list.pk %}"><strong>{{ open_list_count }}</strong><span>Lists with items left</span></a>
+  {% else %}
+    <div class="stat"><strong>{{ open_list_count }}</strong><span>Lists with items left</span></div>
+  {% endif %}
 </section>
 
 <section class="grid two">

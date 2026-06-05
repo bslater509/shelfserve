@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.21
+
+- Add recipe library sorting by title, newest, recently updated, or servings.
+- Add quick filtering to pantry stock and shopping lists.
+- Remember the shopping-list hide-checked preference per list and keep progress counts live while ticking items.
+- Link the dashboard's active shopping-list count directly to the first list with items remaining.
+
 ## 0.1.20
 
 - Add pantry tracking for ingredients already on hand.

@@ -840,6 +840,16 @@ class RecipePlannerTests(TestCase):
         self.assertContains(response, "Quick curry")
         self.assertNotContains(response, "Quick pasta")
 
+    def test_recipe_list_sorts_by_selected_option(self):
+        small = Recipe.objects.create(title="Small salad", servings=1)
+        large = Recipe.objects.create(title="Family pasta", servings=6)
+
+        response = self.client.get(reverse("recipe_list") + "?sort=servings")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.context["recipes"]), [small, large])
+        self.assertEqual(response.context["sort"], "servings")
+
     def test_planner_links_latest_shopping_list_for_selected_week(self):
         supermarket = Supermarket.objects.create(name="Tesco")
         shopping_list = ShoppingList.objects.create(supermarket=supermarket, week_start=date(2026, 6, 1))

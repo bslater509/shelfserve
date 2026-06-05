@@ -40,11 +40,14 @@
 <section class="panel pantry-section">
   <div class="section-heading">
     <h2>Current stock</h2>
-    <span class="muted">{{ pantry_items|length }} items</span>
+    <span class="muted" id="pantry-count">{{ pantry_items|length }} items</span>
+  </div>
+  <div class="list-filter-bar">
+    <input type="search" id="pantry-filter" placeholder="Filter pantry by ingredient or note" autocomplete="off">
   </div>
   <ul class="shopping-items pantry-items">
     {% for item in pantry_items %}
-      <li>
+      <li data-pantry-row data-filter-text="{{ item.ingredient.name }} {{ item.note }} {{ item.unit }}">
         <span class="amount">{{ item.quantity|quantity }} {{ item.unit }}</span>
         <span class="item-name">{{ item.ingredient.name }}</span>
         <div class="item-meta">
@@ -90,6 +93,7 @@
       <li class="empty">No pantry stock yet.</li>
     {% endfor %}
   </ul>
+  <p class="empty hidden" id="pantry-empty-filter">No pantry items match that filter.</p>
 </section>
 
 <datalist id="ingredient-names-datalist">
@@ -97,4 +101,33 @@
     <option value="{{ suggested_ingredient }}">
   {% endfor %}
 </datalist>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const filter = document.getElementById("pantry-filter");
+    const count = document.getElementById("pantry-count");
+    const emptyFilter = document.getElementById("pantry-empty-filter");
+    const rows = Array.from(document.querySelectorAll("[data-pantry-row]"));
+
+    if (!filter || !count || rows.length === 0) {
+      return;
+    }
+
+    function updatePantryFilter() {
+      const term = filter.value.trim().toLowerCase();
+      let shown = 0;
+      rows.forEach((row) => {
+        const matches = row.dataset.filterText.toLowerCase().includes(term);
+        row.hidden = !matches;
+        if (matches) {
+          shown += 1;
+        }
+      });
+      count.textContent = `${shown} ${shown === 1 ? "item" : "items"}`;
+      emptyFilter.classList.toggle("hidden", shown !== 0 || term === "");
+    }
+
+    filter.addEventListener("input", updatePantryFilter);
+  });
+</script>
 {% endblock %}

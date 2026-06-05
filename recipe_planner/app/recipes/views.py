@@ -47,6 +47,7 @@ def dashboard(request):
         total_items=Count("items"),
         checked_items=Count("items", filter=Q(items__checked=True)),
     )
+    first_open_list = active_lists.filter(items__checked=False).distinct().first()
     context = {
         "recipe_count": Recipe.objects.count(),
         "supermarket_count": Supermarket.objects.count(),
@@ -55,6 +56,7 @@ def dashboard(request):
         "today_entries": MealPlanEntry.objects.filter(date=today).select_related("recipe"),
         "upcoming_entries": MealPlanEntry.objects.filter(date__gt=today).select_related("recipe")[:5],
         "recent_lists": active_lists[:5],
+        "first_open_list": first_open_list,
         "week_start": week_start,
         "week_end": week_end,
     }
@@ -64,6 +66,21 @@ def dashboard(request):
 def recipe_list(request):
     query = request.GET.get("q", "").strip()
     selected_tag = normalise_tag_name(request.GET.get("tag", ""))
+    sort = request.GET.get("sort", "title")
+    sort_options = {
+        "title": "Title A-Z",
+        "newest": "Newest first",
+        "updated": "Recently updated",
+        "servings": "Servings",
+    }
+    sort_ordering = {
+        "title": ("title",),
+        "newest": ("-created_at", "title"),
+        "updated": ("-updated_at", "title"),
+        "servings": ("servings", "title"),
+    }
+    if sort not in sort_options:
+        sort = "title"
     recipes = Recipe.objects.prefetch_related("tags", "ingredients__ingredient")
     if query:
         recipes = recipes.filter(
@@ -73,6 +90,7 @@ def recipe_list(request):
         ).distinct()
     if selected_tag:
         recipes = recipes.filter(tags__name__iexact=selected_tag).distinct()
+    recipes = recipes.order_by(*sort_ordering[sort])
     return render(
         request,
         "recipes/recipe_list.html",
@@ -80,6 +98,8 @@ def recipe_list(request):
             "recipes": recipes,
             "query": query,
             "selected_tag": selected_tag,
+            "sort": sort,
+            "sort_options": sort_options,
             "tags": Tag.objects.annotate(recipe_count=Count("recipe")).filter(recipe_count__gt=0),
         },
     )

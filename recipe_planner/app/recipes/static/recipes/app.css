@@ -1287,6 +1287,20 @@ textarea {
   min-width: min(320px, 100%);
 }
 
+.inline-field {
+  display: inline-flex;
+  align-items: center;
+  grid-template-columns: none;
+  gap: 8px;
+  color: var(--muted);
+  font-size: .9rem;
+  white-space: nowrap;
+}
+
+.inline-field select {
+  min-width: 150px;
+}
+
 .tag-filter-row {
   display: flex;
   gap: 8px;
@@ -1358,7 +1372,7 @@ textarea {
 
 .shopping-progress-panel {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(180px, 2fr) auto;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 2fr) minmax(240px, auto);
   align-items: center;
   gap: 16px;
   margin-bottom: 14px;
@@ -1394,6 +1408,30 @@ textarea {
 .toggle-row input {
   width: 18px;
   height: 18px;
+}
+
+.shopping-progress-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.shopping-progress-controls input[type="search"] {
+  min-width: 180px;
+}
+
+.list-filter-bar {
+  margin-top: 12px;
+}
+
+.list-filter-bar input[type="search"] {
+  max-width: 420px;
+}
+
+.hidden {
+  display: none !important;
 }
 
 #ajax-toast {
@@ -1487,6 +1525,18 @@ textarea {
   .library-search {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .inline-field,
+  .inline-field select,
+  .shopping-progress-controls,
+  .shopping-progress-controls input[type="search"],
+  .list-filter-bar input[type="search"] {
+    width: 100%;
+  }
+
+  .shopping-progress-controls {
+    justify-content: stretch;
   }
 
   .shopping-items li {
@@ -2234,4 +2284,3 @@ textarea {
 .cook-mode-overlay.cook-mode-dark .cook-mode-ingredient-item span {
   color: #f1f5f9;
 }
-
