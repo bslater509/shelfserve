@@ -100,6 +100,13 @@
                           <span class="servings-count-display">{% if entry %}{{ entry.servings }}{% else %}1{% endif %}</span>
                           <button type="button" class="btn-servings-action btn-inc-servings" aria-label="Increase servings">&plus;</button>
                         </div>
+                        {% if entry.pk %}
+                          {% if entry.pantry_consumed_at %}
+                            <button class="button compact cooked-toggle" type="submit" form="undo-cooked-{{ entry.pk }}">Undo cooked</button>
+                          {% else %}
+                            <button class="button compact cooked-toggle" type="submit" form="cook-entry-{{ entry.pk }}">Cooked</button>
+                          {% endif %}
+                        {% endif %}
                       </div>
                     </div>
                     <button type="button" class="btn-remove-meal-action" aria-label="Remove recipe from slot">&times;</button>
@@ -121,6 +128,25 @@
     </button>
   </div>
 </form>
+
+{% for day in days %}
+  {% for slot, label in meal_slots %}
+    {% plan_key day slot as key %}
+    {% with entry=entries|get_item:key %}
+      {% if entry.pk %}
+        {% if entry.pantry_consumed_at %}
+          <form id="undo-cooked-{{ entry.pk }}" method="post" action="{% url 'undo_cook_planner_entry' entry.pk %}">
+            {% csrf_token %}
+          </form>
+        {% else %}
+          <form id="cook-entry-{{ entry.pk }}" method="post" action="{% url 'cook_planner_entry' entry.pk %}">
+            {% csrf_token %}
+          </form>
+        {% endif %}
+      {% endif %}
+    {% endwith %}
+  {% endfor %}
+{% endfor %}
 
 <section class="panel list-generation-panel">
   <h2>Shopping list</h2>

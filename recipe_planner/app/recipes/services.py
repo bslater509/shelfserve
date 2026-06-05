@@ -2,8 +2,11 @@ from collections import defaultdict
 from decimal import Decimal
 
 from django.db import transaction
+from django.utils import timezone
 
 from .models import (
+    PantryAdjustment,
+    PantryItem,
     ShoppingList,
     ShoppingListItem,
     SupermarketSection,
@@ -49,7 +52,16 @@ def shopping_item_match_key(section_name, ingredient_name, unit):
     )
 
 
-def planned_shopping_items(supermarket, plan_entries):
+def pantry_quantity_lookup():
+    lookup = defaultdict(Decimal)
+    for item in PantryItem.objects.select_related("ingredient"):
+        group, multiplier, base_unit = unit_bucket(item.unit)
+        key = (item.ingredient.name.casefold(), group, base_unit)
+        lookup[key] += Decimal(item.quantity) * multiplier
+    return lookup
+
+
+def planned_shopping_items(supermarket, plan_entries, subtract_pantry=True):
     sections = section_lookup(supermarket)
     grouped = defaultdict(lambda: {"quantity": Decimal("0"), "notes": set()})
 
@@ -74,7 +86,17 @@ def planned_shopping_items(supermarket, plan_entries):
                 grouped[key]["notes"].add(recipe_ingredient.note)
 
     items = []
+    pantry_lookup = pantry_quantity_lookup() if subtract_pantry else {}
     for (section_key, _ingredient_key, _group, _base_unit), payload in grouped.items():
+        pantry_key = (payload["ingredient_name"].casefold(), _group, _base_unit)
+        pantry_available = pantry_lookup.get(pantry_key, Decimal("0"))
+        pantry_used = min(payload["quantity"], pantry_available)
+        if pantry_used:
+            payload["quantity"] -= pantry_used
+            pantry_lookup[pantry_key] -= pantry_used
+            payload["notes"].add(f"pantry used: {display_quantity(pantry_used)} {_base_unit}")
+        if payload["quantity"] <= 0:
+            continue
         section = sections.get(section_key)
         items.append(
             ShoppingListItem(
@@ -88,6 +110,67 @@ def planned_shopping_items(supermarket, plan_entries):
         )
 
     return items
+
+
+def mark_meal_cooked(entry):
+    with transaction.atomic():
+        entry = entry.__class__.objects.select_for_update().select_related("recipe").get(pk=entry.pk)
+        if entry.pantry_consumed_at:
+            return entry
+
+        for recipe_ingredient in entry.recipe.ingredients.select_related("ingredient"):
+            group, multiplier, _base_unit = unit_bucket(recipe_ingredient.unit)
+            remaining_base = scale_quantity(recipe_ingredient.quantity, entry.servings, entry.recipe.servings) * multiplier
+            pantry_items = PantryItem.objects.select_for_update().filter(
+                ingredient=recipe_ingredient.ingredient,
+                unit__in=[unit for unit, (unit_group, _multiplier, _base) in UNIT_GROUPS.items() if unit_group == group],
+                quantity__gt=0,
+            ).order_by("-quantity", "pk")
+
+            for pantry_item in pantry_items:
+                item_group, item_multiplier, _item_base_unit = unit_bucket(pantry_item.unit)
+                if item_group != group or remaining_base <= 0:
+                    continue
+                available_base = Decimal(pantry_item.quantity) * item_multiplier
+                used_base = min(remaining_base, available_base)
+                used_item_quantity = (used_base / item_multiplier).quantize(Decimal("0.01"))
+                pantry_item.quantity = ((available_base - used_base) / item_multiplier).quantize(Decimal("0.01"))
+                pantry_item.save(update_fields=["quantity", "updated_at"])
+                PantryAdjustment.objects.create(
+                    meal_plan_entry=entry,
+                    pantry_item=pantry_item,
+                    ingredient=pantry_item.ingredient,
+                    quantity=used_item_quantity,
+                    unit=pantry_item.unit,
+                )
+                remaining_base -= used_base
+
+        entry.pantry_consumed_at = timezone.now()
+        entry.save(update_fields=["pantry_consumed_at"])
+        return entry
+
+
+def undo_meal_cooked(entry):
+    with transaction.atomic():
+        entry = entry.__class__.objects.select_for_update().get(pk=entry.pk)
+        if not entry.pantry_consumed_at:
+            return entry
+
+        for adjustment in entry.pantry_adjustments.select_related("pantry_item", "ingredient"):
+            pantry_item = adjustment.pantry_item
+            if pantry_item is None:
+                pantry_item, _ = PantryItem.objects.get_or_create(
+                    ingredient=adjustment.ingredient,
+                    unit=adjustment.unit,
+                    defaults={"quantity": Decimal("0")},
+                )
+            pantry_item.quantity = Decimal(pantry_item.quantity) + Decimal(adjustment.quantity)
+            pantry_item.save(update_fields=["quantity", "updated_at"])
+
+        entry.pantry_adjustments.all().delete()
+        entry.pantry_consumed_at = None
+        entry.save(update_fields=["pantry_consumed_at"])
+        return entry
 
 
 def build_shopping_list(supermarket, week_start, plan_entries):

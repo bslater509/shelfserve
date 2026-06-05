@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import AppSetting, Recipe, Supermarket
+from .models import AppSetting, PantryItem, Recipe, Supermarket, Unit
 
 
 class RecipeForm(forms.ModelForm):
@@ -21,8 +21,21 @@ class SupermarketForm(forms.ModelForm):
         fields = ["name"]
 
 
+class PantryItemForm(forms.ModelForm):
+    ingredient_name = forms.CharField(label="Ingredient", max_length=120)
+
+    class Meta:
+        model = PantryItem
+        fields = ["ingredient_name", "quantity", "unit", "note"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk:
+            self.fields["ingredient_name"].initial = self.instance.ingredient.name
+        self.fields["unit"].initial = self.fields["unit"].initial or Unit.ITEM
+
+
 class SettingsForm(forms.ModelForm):
     class Meta:
         model = AppSetting
         fields = ["week_start"]
-

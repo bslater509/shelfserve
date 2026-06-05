@@ -10,12 +10,13 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from .forms import RecipeForm, SettingsForm, SupermarketForm
+from .forms import PantryItemForm, RecipeForm, SettingsForm, SupermarketForm
 from .models import (
     AppSetting,
     Ingredient,
     MEAL_SLOTS,
     MealPlanEntry,
+    PantryItem,
     Recipe,
     RecipeIngredient,
     RecipeStep,
@@ -26,7 +27,14 @@ from .models import (
     Tag,
     Unit,
 )
-from .services import build_shopping_list, normalise_name, normalise_tag_name, regenerate_shopping_list
+from .services import (
+    build_shopping_list,
+    mark_meal_cooked,
+    normalise_name,
+    normalise_tag_name,
+    regenerate_shopping_list,
+    undo_meal_cooked,
+)
 from .parser import parse_recipe_url, parse_recipe_text
 
 
@@ -232,19 +240,7 @@ def planner(request):
     copy_from_date = parse_date(copy_from_str)
 
     if request.method == "POST":
-        MealPlanEntry.objects.filter(date__range=(days[0], days[-1])).delete()
-        for day in days:
-            for slot, _label in MEAL_SLOTS:
-                recipe_id = request.POST.get(f"recipe_{day.isoformat()}_{slot}")
-                servings_value = request.POST.get(f"servings_{day.isoformat()}_{slot}") or "1"
-                if recipe_id:
-                    recipe = get_object_or_404(Recipe, pk=recipe_id)
-                    MealPlanEntry.objects.create(
-                        date=day,
-                        meal_slot=slot,
-                        recipe=recipe,
-                        servings=max(1, int(servings_value)),
-                    )
+        save_planner_entries(request.POST, days)
         messages.success(request, "Meal plan saved.")
         return redirect(f"{reverse('planner')}?week={week_start.isoformat()}")
 
@@ -308,6 +304,64 @@ def generate_shopping_list(request):
     shopping_list = build_shopping_list(supermarket, week_start, plan_entries)
     messages.success(request, "Shopping list generated.")
     return redirect("shopping_list_detail", pk=shopping_list.pk)
+
+
+def pantry_list(request):
+    if request.method == "POST":
+        form = PantryItemForm(request.POST)
+        if form.is_valid():
+            pantry_item = save_pantry_item_form(form)
+            messages.success(request, f"Saved {pantry_item.ingredient.name} in pantry.")
+            return redirect("pantry_list")
+    else:
+        form = PantryItemForm()
+
+    return render(
+        request,
+        "recipes/pantry_list.html",
+        {
+            "form": form,
+            "pantry_items": PantryItem.objects.select_related("ingredient"),
+            "suggested_ingredients": Ingredient.objects.values_list("name", flat=True).distinct().order_by("name"),
+        },
+    )
+
+
+@require_POST
+def edit_pantry_item(request, pk):
+    pantry_item = get_object_or_404(PantryItem.objects.select_related("ingredient"), pk=pk)
+    form = PantryItemForm(request.POST, instance=pantry_item)
+    if form.is_valid():
+        saved_item = save_pantry_item_form(form, pantry_item)
+        messages.success(request, f"Updated {saved_item.ingredient.name} in pantry.")
+    else:
+        messages.error(request, "Pantry item could not be updated.")
+    return redirect("pantry_list")
+
+
+@require_POST
+def delete_pantry_item(request, pk):
+    pantry_item = get_object_or_404(PantryItem.objects.select_related("ingredient"), pk=pk)
+    ingredient_name = pantry_item.ingredient.name
+    pantry_item.delete()
+    messages.success(request, f"Removed {ingredient_name} from pantry.")
+    return redirect("pantry_list")
+
+
+@require_POST
+def cook_planner_entry(request, pk):
+    entry = get_object_or_404(MealPlanEntry.objects.select_related("recipe"), pk=pk)
+    mark_meal_cooked(entry)
+    messages.success(request, f"Marked {entry.recipe.title} as cooked and updated pantry stock.")
+    return redirect(f"{reverse('planner')}?week={entry.date.isoformat()}")
+
+
+@require_POST
+def undo_cook_planner_entry(request, pk):
+    entry = get_object_or_404(MealPlanEntry.objects.select_related("recipe"), pk=pk)
+    undo_meal_cooked(entry)
+    messages.success(request, f"Restored pantry stock for {entry.recipe.title}.")
+    return redirect(f"{reverse('planner')}?week={entry.date.isoformat()}")
 
 
 def shopping_list_detail(request, pk):
@@ -518,6 +572,67 @@ def settings_view(request):
     else:
         form = SettingsForm(instance=settings)
     return render(request, "recipes/settings.html", {"form": form})
+
+
+def save_pantry_item_form(form, instance=None):
+    ingredient_name = normalise_name(form.cleaned_data["ingredient_name"])
+    ingredient, _ = Ingredient.objects.get_or_create(name=ingredient_name)
+    quantity = form.cleaned_data["quantity"]
+    unit = form.cleaned_data["unit"]
+    note = form.cleaned_data["note"].strip()
+    duplicate = PantryItem.objects.filter(ingredient=ingredient, unit=unit).exclude(
+        pk=instance.pk if instance else None
+    ).first()
+    if duplicate:
+        duplicate.quantity = Decimal(duplicate.quantity) + Decimal(quantity)
+        duplicate.note = note
+        duplicate.save(update_fields=["quantity", "note", "updated_at"])
+        if instance and instance.pk:
+            instance.delete()
+        return duplicate
+
+    pantry_item = instance or PantryItem()
+    pantry_item.ingredient = ingredient
+    pantry_item.quantity = quantity
+    pantry_item.unit = unit
+    pantry_item.note = note
+    pantry_item.save()
+    return pantry_item
+
+
+def save_planner_entries(post_data, days):
+    existing_entries = {
+        (entry.date, entry.meal_slot): entry
+        for entry in MealPlanEntry.objects.filter(date__range=(days[0], days[-1])).select_related("recipe")
+    }
+    with transaction.atomic():
+        for day in days:
+            for slot, _label in MEAL_SLOTS:
+                existing = existing_entries.get((day, slot))
+                recipe_id = post_data.get(f"recipe_{day.isoformat()}_{slot}")
+                servings = parse_positive_int(post_data.get(f"servings_{day.isoformat()}_{slot}") or "1")
+
+                if not recipe_id:
+                    if existing:
+                        undo_meal_cooked(existing)
+                        existing.delete()
+                    continue
+
+                recipe = get_object_or_404(Recipe, pk=recipe_id)
+                if existing and existing.recipe_id == recipe.pk and existing.servings == servings:
+                    continue
+
+                if existing:
+                    undo_meal_cooked(existing)
+                    existing.delete()
+                MealPlanEntry.objects.create(date=day, meal_slot=slot, recipe=recipe, servings=servings)
+
+
+def parse_positive_int(value):
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return 1
 
 
 def save_supermarket_sections(supermarket, sections_data):

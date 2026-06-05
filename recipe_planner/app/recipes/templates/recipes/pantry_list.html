@@ -1,0 +1,100 @@
+{% extends "recipes/base.html" %}
+{% load recipe_extras %}
+{% block title %}Pantry - ShelfServe{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Pantry</h1>
+    <p class="muted">Track what is already on hand before generating shopping lists.</p>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Add pantry item</h2>
+  <form method="post" class="custom-item-form">
+    {% csrf_token %}
+    <div class="custom-item-inputs">
+      <div class="form-group">
+        <label for="{{ form.ingredient_name.id_for_label }}">Ingredient</label>
+        {{ form.ingredient_name }}
+      </div>
+      <div class="form-group small">
+        <label for="{{ form.quantity.id_for_label }}">Qty</label>
+        {{ form.quantity }}
+      </div>
+      <div class="form-group medium">
+        <label for="{{ form.unit.id_for_label }}">Unit</label>
+        {{ form.unit }}
+      </div>
+      <div class="form-group notes">
+        <label for="{{ form.note.id_for_label }}">Notes</label>
+        {{ form.note }}
+      </div>
+    </div>
+    <div class="custom-item-actions">
+      <button class="button primary" type="submit">Add to pantry</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel pantry-section">
+  <div class="section-heading">
+    <h2>Current stock</h2>
+    <span class="muted">{{ pantry_items|length }} items</span>
+  </div>
+  <ul class="shopping-items pantry-items">
+    {% for item in pantry_items %}
+      <li>
+        <span class="amount">{{ item.quantity|quantity }} {{ item.unit }}</span>
+        <span class="item-name">{{ item.ingredient.name }}</span>
+        <div class="item-meta">
+          {% if item.note %}<span class="muted">{{ item.note }}</span>{% endif %}
+        </div>
+        <details class="shopping-item-edit">
+          <summary>Edit</summary>
+          <form method="post" action="{% url 'edit_pantry_item' item.pk %}" class="shopping-edit-form">
+            {% csrf_token %}
+            <div class="custom-item-inputs">
+              <div class="form-group">
+                <label for="pantry_name_{{ item.pk }}">Ingredient</label>
+                <input id="pantry_name_{{ item.pk }}" name="ingredient_name" value="{{ item.ingredient.name }}" required list="ingredient-names-datalist">
+              </div>
+              <div class="form-group small">
+                <label for="pantry_qty_{{ item.pk }}">Qty</label>
+                <input id="pantry_qty_{{ item.pk }}" name="quantity" type="number" min="0" step="0.01" value="{{ item.quantity|quantity }}" required>
+              </div>
+              <div class="form-group medium">
+                <label for="pantry_unit_{{ item.pk }}">Unit</label>
+                <select id="pantry_unit_{{ item.pk }}" name="unit">
+                  {% for value,label in form.fields.unit.choices %}
+                    <option value="{{ value }}"{% if item.unit == value %} selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="form-group notes">
+                <label for="pantry_note_{{ item.pk }}">Notes</label>
+                <input id="pantry_note_{{ item.pk }}" name="note" value="{{ item.note }}">
+              </div>
+            </div>
+            <div class="shopping-item-actions">
+              <button class="button primary" type="submit">Save pantry item</button>
+            </div>
+          </form>
+          <form method="post" action="{% url 'delete_pantry_item' item.pk %}" class="shopping-delete-form">
+            {% csrf_token %}
+            <button class="button danger-button-style" type="submit">Delete item</button>
+          </form>
+        </details>
+      </li>
+    {% empty %}
+      <li class="empty">No pantry stock yet.</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<datalist id="ingredient-names-datalist">
+  {% for suggested_ingredient in suggested_ingredients %}
+    <option value="{{ suggested_ingredient }}">
+  {% endfor %}
+</datalist>
+{% endblock %}

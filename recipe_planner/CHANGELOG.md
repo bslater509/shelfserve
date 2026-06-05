@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.20
+
+- Add pantry tracking for ingredients already on hand.
+- Subtract matching pantry stock from generated and regenerated shopping lists without changing pantry quantities.
+- Add planner controls for marking meals as cooked and undoing cooked meals, updating pantry stock only when requested.
+
 ## 0.1.19
 
 - Refresh the main ShelfServe interface with clearer navigation, active page states, and improved mobile wrapping.

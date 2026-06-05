@@ -16,6 +16,8 @@ from .models import (
     AppSetting,
     Ingredient,
     MealPlanEntry,
+    PantryAdjustment,
+    PantryItem,
     Recipe,
     RecipeIngredient,
     ShoppingList,
@@ -486,6 +488,83 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(asda_list.items.first().section_name, "Bakery")
         self.assertEqual(ShoppingListItem.objects.filter(shopping_list=asda_list).count(), 3)
 
+    def test_pantry_item_create_edit_and_delete(self):
+        self.assertEqual(self.client.get(reverse("pantry_list")).status_code, 200)
+
+        response = self.client.post(
+            reverse("pantry_list"),
+            {
+                "ingredient_name": "Plain flour",
+                "quantity": "1.5",
+                "unit": Unit.KILOGRAM,
+                "note": "Cupboard",
+            },
+        )
+        self.assertRedirects(response, reverse("pantry_list"))
+        pantry_item = PantryItem.objects.get(ingredient__name="Plain flour")
+        self.assertEqual(pantry_item.quantity, Decimal("1.50"))
+        self.assertEqual(pantry_item.unit, Unit.KILOGRAM)
+
+        response = self.client.post(
+            reverse("edit_pantry_item", args=[pantry_item.pk]),
+            {
+                "ingredient_name": "Plain flour",
+                "quantity": "2",
+                "unit": Unit.KILOGRAM,
+                "note": "Restocked",
+            },
+        )
+        self.assertRedirects(response, reverse("pantry_list"))
+        pantry_item.refresh_from_db()
+        self.assertEqual(pantry_item.quantity, Decimal("2.00"))
+        self.assertEqual(pantry_item.note, "Restocked")
+
+        response = self.client.post(reverse("delete_pantry_item", args=[pantry_item.pk]))
+        self.assertRedirects(response, reverse("pantry_list"))
+        self.assertFalse(PantryItem.objects.filter(pk=pantry_item.pk).exists())
+
+    def test_shopping_list_subtracts_matching_pantry_stock(self):
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        PantryItem.objects.create(ingredient=tomatoes, quantity=Decimal("0.60"), unit=Unit.KILOGRAM)
+        recipe = Recipe.objects.create(title="Pasta", servings=2)
+        RecipeIngredient.objects.create(recipe=recipe, ingredient=tomatoes, quantity=Decimal("1000"), unit=Unit.GRAM)
+        entry = MealPlanEntry.objects.create(date="2026-06-01", meal_slot="dinner", recipe=recipe, servings=2)
+        supermarket = Supermarket.objects.create(name="Tesco")
+
+        shopping_list = build_shopping_list(supermarket, entry.date, MealPlanEntry.objects.filter(pk=entry.pk))
+        item = shopping_list.items.get(ingredient_name="Tomatoes")
+
+        self.assertEqual(item.quantity, Decimal("400.00"))
+        self.assertEqual(item.unit, Unit.GRAM)
+        self.assertIn("pantry used: 600 g", item.notes)
+        self.assertEqual(PantryItem.objects.get(pk=PantryItem.objects.first().pk).quantity, Decimal("0.60"))
+
+    def test_shopping_list_omits_items_fully_covered_by_pantry(self):
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        PantryItem.objects.create(ingredient=tomatoes, quantity=Decimal("1"), unit=Unit.KILOGRAM)
+        recipe = Recipe.objects.create(title="Pasta", servings=2)
+        RecipeIngredient.objects.create(recipe=recipe, ingredient=tomatoes, quantity=Decimal("500"), unit=Unit.GRAM)
+        entry = MealPlanEntry.objects.create(date="2026-06-01", meal_slot="dinner", recipe=recipe, servings=2)
+        supermarket = Supermarket.objects.create(name="Tesco")
+
+        shopping_list = build_shopping_list(supermarket, entry.date, MealPlanEntry.objects.filter(pk=entry.pk))
+
+        self.assertEqual(shopping_list.items.count(), 0)
+
+    def test_shopping_list_does_not_subtract_incompatible_pantry_units(self):
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        PantryItem.objects.create(ingredient=tomatoes, quantity=Decimal("1"), unit=Unit.ITEM)
+        recipe = Recipe.objects.create(title="Pasta", servings=2)
+        RecipeIngredient.objects.create(recipe=recipe, ingredient=tomatoes, quantity=Decimal("500"), unit=Unit.GRAM)
+        entry = MealPlanEntry.objects.create(date="2026-06-01", meal_slot="dinner", recipe=recipe, servings=2)
+        supermarket = Supermarket.objects.create(name="Tesco")
+
+        shopping_list = build_shopping_list(supermarket, entry.date, MealPlanEntry.objects.filter(pk=entry.pk))
+        item = shopping_list.items.get(ingredient_name="Tomatoes")
+
+        self.assertEqual(item.quantity, Decimal("500.00"))
+        self.assertEqual(item.unit, Unit.GRAM)
+
     def test_toggle_shopping_item_ajax(self):
         supermarket = Supermarket.objects.create(name="Tesco")
         shopping_list = ShoppingList.objects.create(supermarket=supermarket, week_start=date(2026, 6, 1))
@@ -591,6 +670,50 @@ class RecipePlannerTests(TestCase):
         custom_item = shopping_list.items.get(ingredient_name="Milk")
         self.assertTrue(custom_item.is_custom)
         self.assertTrue(custom_item.checked)
+
+    def test_mark_planned_meal_cooked_reduces_pantry_once_and_undo_restores(self):
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        pantry_item = PantryItem.objects.create(ingredient=tomatoes, quantity=Decimal("1"), unit=Unit.KILOGRAM)
+        recipe = Recipe.objects.create(title="Pasta", servings=2)
+        RecipeIngredient.objects.create(recipe=recipe, ingredient=tomatoes, quantity=Decimal("500"), unit=Unit.GRAM)
+        entry = MealPlanEntry.objects.create(date=date(2026, 6, 1), meal_slot="dinner", recipe=recipe, servings=2)
+
+        response = self.client.post(reverse("cook_planner_entry", args=[entry.pk]))
+        self.assertRedirects(response, reverse("planner") + "?week=2026-06-01")
+        pantry_item.refresh_from_db()
+        entry.refresh_from_db()
+        self.assertEqual(pantry_item.quantity, Decimal("0.50"))
+        self.assertIsNotNone(entry.pantry_consumed_at)
+        self.assertEqual(PantryAdjustment.objects.filter(meal_plan_entry=entry).count(), 1)
+
+        self.client.post(reverse("cook_planner_entry", args=[entry.pk]))
+        pantry_item.refresh_from_db()
+        self.assertEqual(pantry_item.quantity, Decimal("0.50"))
+
+        response = self.client.post(reverse("undo_cook_planner_entry", args=[entry.pk]))
+        self.assertRedirects(response, reverse("planner") + "?week=2026-06-01")
+        pantry_item.refresh_from_db()
+        entry.refresh_from_db()
+        self.assertEqual(pantry_item.quantity, Decimal("1.00"))
+        self.assertIsNone(entry.pantry_consumed_at)
+        self.assertFalse(PantryAdjustment.objects.filter(meal_plan_entry=entry).exists())
+
+    def test_saving_planner_change_restores_pantry_for_removed_cooked_meal(self):
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        pantry_item = PantryItem.objects.create(ingredient=tomatoes, quantity=Decimal("1"), unit=Unit.KILOGRAM)
+        recipe = Recipe.objects.create(title="Pasta", servings=2)
+        RecipeIngredient.objects.create(recipe=recipe, ingredient=tomatoes, quantity=Decimal("500"), unit=Unit.GRAM)
+        entry = MealPlanEntry.objects.create(date=date(2026, 6, 1), meal_slot="dinner", recipe=recipe, servings=2)
+        self.client.post(reverse("cook_planner_entry", args=[entry.pk]))
+        pantry_item.refresh_from_db()
+        self.assertEqual(pantry_item.quantity, Decimal("0.50"))
+
+        response = self.client.post(reverse("planner") + "?week=2026-06-01", {})
+
+        self.assertRedirects(response, reverse("planner") + "?week=2026-06-01")
+        pantry_item.refresh_from_db()
+        self.assertEqual(pantry_item.quantity, Decimal("1.00"))
+        self.assertFalse(MealPlanEntry.objects.filter(pk=entry.pk).exists())
 
     def test_edit_shopping_item_updates_validated_fields_and_section_order(self):
         supermarket = Supermarket.objects.create(name="Tesco")

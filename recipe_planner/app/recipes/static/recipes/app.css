@@ -1414,6 +1414,23 @@ textarea {
   flex-wrap: wrap;
 }
 
+.pantry-section {
+  margin-top: 14px;
+}
+
+.pantry-items li {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.pantry-items .item-meta {
+  grid-column: 2 / -1;
+}
+
+.cooked-toggle {
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
 .planner-form {
   margin-top: 16px;
 }
@@ -2217,5 +2234,4 @@ textarea {
 .cook-mode-overlay.cook-mode-dark .cook-mode-ingredient-item span {
   color: #f1f5f9;
 }
-
 
