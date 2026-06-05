@@ -137,6 +137,17 @@
       <button class="button primary" type="submit">Generate list</button>
     </div>
   </form>
+  {% if latest_lists_by_supermarket %}
+    <div class="latest-list-links">
+      {% for supermarket in supermarkets %}
+        {% with latest=latest_lists_by_supermarket|get_item:supermarket.pk %}
+          {% if latest %}
+            <a href="{% url 'shopping_list_detail' latest.pk %}">Open latest {{ supermarket.name }} list</a>
+          {% endif %}
+        {% endwith %}
+      {% endfor %}
+    </div>
+  {% endif %}
 </section>
 
 <!-- Visual Recipe Selector Modal -->

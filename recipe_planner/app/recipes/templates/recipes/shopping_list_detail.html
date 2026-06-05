@@ -5,9 +5,15 @@
 <section class="toolbar">
   <div>
     <h1>{{ shopping_list.supermarket.name }}</h1>
-    <p class="muted">Week starting {{ shopping_list.week_start|date:"D j M Y" }}</p>
+    <p class="muted">Week starting {{ shopping_list.week_start|date:"D j M Y" }} · {{ checked_items }}/{{ total_items }} checked</p>
   </div>
-  <a class="button" href="{% url 'planner' %}?week={{ shopping_list.week_start|date:'Y-m-d' }}">Planner</a>
+  <div class="actions">
+    <form method="post" action="{% url 'regenerate_shopping_list' shopping_list.pk %}">
+      {% csrf_token %}
+      <button class="button primary" type="submit">Regenerate list</button>
+    </form>
+    <a class="button" href="{% url 'planner' %}?week={{ shopping_list.week_start|date:'Y-m-d' }}">Planner</a>
+  </div>
 </section>
 
 <div id="ajax-toast" class="message error toast-error" style="display: none; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.15);"></div>
@@ -25,6 +31,46 @@
           <span class="amount">{{ item.quantity|quantity }} {{ item.unit }}</span>
           <span class="item-name">{{ item.ingredient_name }}</span>
           {% if item.notes %}<span class="muted">{{ item.notes }}</span>{% endif %}
+          {% if item.is_custom %}<span class="custom-badge">Custom</span>{% endif %}
+          <details class="shopping-item-edit">
+            <summary>Edit</summary>
+            <form method="post" action="{% url 'edit_shopping_item' item.pk %}" class="shopping-edit-form">
+              {% csrf_token %}
+              <div class="custom-item-inputs">
+                <div class="form-group">
+                  <label for="edit_name_{{ item.pk }}">Name</label>
+                  <input id="edit_name_{{ item.pk }}" name="ingredient_name" value="{{ item.ingredient_name }}" required list="ingredient-names-datalist">
+                </div>
+                <div class="form-group small">
+                  <label for="edit_qty_{{ item.pk }}">Qty</label>
+                  <input id="edit_qty_{{ item.pk }}" name="quantity" type="number" min="0.01" step="0.01" value="{{ item.quantity|quantity }}" required>
+                </div>
+                <div class="form-group medium">
+                  <label for="edit_unit_{{ item.pk }}">Unit</label>
+                  <select id="edit_unit_{{ item.pk }}" name="unit">
+                    {% for value,label in units %}
+                      <option value="{{ value }}"{% if item.unit == value %} selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="edit_category_{{ item.pk }}">Aisle</label>
+                  <input id="edit_category_{{ item.pk }}" name="section_name" value="{{ item.section_name }}" list="ingredient-categories-datalist">
+                </div>
+                <div class="form-group notes">
+                  <label for="edit_notes_{{ item.pk }}">Notes</label>
+                  <input id="edit_notes_{{ item.pk }}" name="notes" value="{{ item.notes }}">
+                </div>
+              </div>
+              <div class="shopping-item-actions">
+                <button class="button primary" type="submit">Save item</button>
+              </div>
+            </form>
+            <form method="post" action="{% url 'delete_shopping_item' item.pk %}" class="shopping-delete-form">
+              {% csrf_token %}
+              <button class="button danger-button-style" type="submit">Delete item</button>
+            </form>
+          </details>
         </li>
       {% endfor %}
     </ul>

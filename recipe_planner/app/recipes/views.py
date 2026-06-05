@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation
 from django.contrib import messages
 from django.core.files.storage import default_storage
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.http import HttpResponseBadRequest, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -26,7 +26,7 @@ from .models import (
     Tag,
     Unit,
 )
-from .services import build_shopping_list, normalise_name, normalise_tag_name
+from .services import build_shopping_list, normalise_name, normalise_tag_name, regenerate_shopping_list
 from .parser import parse_recipe_url, parse_recipe_text
 
 
@@ -38,7 +38,10 @@ def dashboard(request):
         "recipe_count": Recipe.objects.count(),
         "supermarket_count": Supermarket.objects.count(),
         "today_entries": MealPlanEntry.objects.filter(date=today).select_related("recipe"),
-        "recent_lists": ShoppingList.objects.select_related("supermarket")[:5],
+        "recent_lists": ShoppingList.objects.select_related("supermarket").annotate(
+            total_items=Count("items"),
+            checked_items=Count("items", filter=Q(items__checked=True)),
+        )[:5],
         "week_start": week_start,
     }
     return render(request, "recipes/dashboard.html", context)
@@ -250,6 +253,10 @@ def planner(request):
         }
 
     supermarkets = Supermarket.objects.all()
+    latest_lists_by_supermarket = {}
+    for shopping_list in ShoppingList.objects.filter(week_start=week_start).select_related("supermarket").order_by("-created_at"):
+        latest_lists_by_supermarket.setdefault(shopping_list.supermarket_id, shopping_list)
+
     return render(
         request,
         "recipes/planner.html",
@@ -259,6 +266,7 @@ def planner(request):
             "recipes": recipes,
             "entries": entries,
             "supermarkets": supermarkets,
+            "latest_lists_by_supermarket": latest_lists_by_supermarket,
             "week_start": week_start,
             "previous_week": week_start - timedelta(days=7),
             "next_week": week_start + timedelta(days=7),
@@ -288,6 +296,8 @@ def shopping_list_detail(request, pk):
         ShoppingList.objects.select_related("supermarket").prefetch_related("items"),
         pk=pk,
     )
+    total_items = shopping_list.items.count()
+    checked_items = shopping_list.items.filter(checked=True).count()
     grouped_items = []
     current_section = None
     for item in shopping_list.items.all():
@@ -309,6 +319,8 @@ def shopping_list_detail(request, pk):
         {
             "shopping_list": shopping_list,
             "grouped_items": grouped_items,
+            "total_items": total_items,
+            "checked_items": checked_items,
             "units": Unit.choices,
             "suggested_ingredients": suggested_ingredients,
             "suggested_categories": suggested_categories,
@@ -327,6 +339,21 @@ def toggle_shopping_item(request, pk):
 
 
 @require_POST
+def regenerate_existing_shopping_list(request, pk):
+    shopping_list = get_object_or_404(ShoppingList.objects.select_related("supermarket"), pk=pk)
+    plan_entries = MealPlanEntry.objects.filter(
+        date__range=(shopping_list.week_start, shopping_list.week_start + timedelta(days=6))
+    )
+    if not plan_entries.exists():
+        messages.error(request, "Plan at least one recipe before regenerating this shopping list.")
+        return redirect("shopping_list_detail", pk=pk)
+
+    regenerate_shopping_list(shopping_list, plan_entries)
+    messages.success(request, "Shopping list regenerated.")
+    return redirect("shopping_list_detail", pk=pk)
+
+
+@require_POST
 def add_shopping_item(request, pk):
     shopping_list = get_object_or_404(ShoppingList, pk=pk)
     ingredient_name = normalise_name(request.POST.get("ingredient_name", ""))
@@ -338,6 +365,8 @@ def add_shopping_item(request, pk):
     try:
         quantity = Decimal(quantity_str)
     except (InvalidOperation, ValueError):
+        quantity = Decimal("1")
+    if quantity <= 0:
         quantity = Decimal("1")
 
     unit = request.POST.get("unit", Unit.ITEM)
@@ -362,10 +391,58 @@ def add_shopping_item(request, pk):
         unit=unit,
         section_name=section_name,
         section_order=section_order,
-        notes=request.POST.get("notes", "").strip()
+        notes=request.POST.get("notes", "").strip(),
+        is_custom=True,
     )
     messages.success(request, f"Added {ingredient_name} to shopping list.")
     return redirect("shopping_list_detail", pk=pk)
+
+
+@require_POST
+def edit_shopping_item(request, pk):
+    item = get_object_or_404(ShoppingListItem.objects.select_related("shopping_list__supermarket"), pk=pk)
+    ingredient_name = normalise_name(request.POST.get("ingredient_name", ""))
+    if not ingredient_name:
+        messages.error(request, "Ingredient name is required.")
+        return redirect("shopping_list_detail", pk=item.shopping_list_id)
+
+    try:
+        quantity = Decimal(request.POST.get("quantity", "1"))
+    except (InvalidOperation, ValueError):
+        messages.error(request, "Quantity must be a valid number.")
+        return redirect("shopping_list_detail", pk=item.shopping_list_id)
+    if quantity <= 0:
+        messages.error(request, "Quantity must be greater than zero.")
+        return redirect("shopping_list_detail", pk=item.shopping_list_id)
+
+    unit = request.POST.get("unit", Unit.ITEM)
+    if unit not in Unit.values:
+        unit = Unit.ITEM
+
+    section_name = normalise_name(request.POST.get("section_name", "Uncategorised")) or "Uncategorised"
+    section = SupermarketSection.objects.filter(
+        supermarket=item.shopping_list.supermarket,
+        name__iexact=section_name,
+    ).first()
+
+    item.ingredient_name = ingredient_name
+    item.quantity = quantity
+    item.unit = unit
+    item.section_name = section_name
+    item.section_order = section.order if section else 9999
+    item.notes = request.POST.get("notes", "").strip()
+    item.save(update_fields=["ingredient_name", "quantity", "unit", "section_name", "section_order", "notes"])
+    messages.success(request, "Shopping item updated.")
+    return redirect("shopping_list_detail", pk=item.shopping_list_id)
+
+
+@require_POST
+def delete_shopping_item(request, pk):
+    item = get_object_or_404(ShoppingListItem, pk=pk)
+    shopping_list_id = item.shopping_list_id
+    item.delete()
+    messages.success(request, "Shopping item deleted.")
+    return redirect("shopping_list_detail", pk=shopping_list_id)
 
 
 def supermarket_list(request):

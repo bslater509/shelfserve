@@ -188,6 +188,7 @@ class ShoppingListItem(models.Model):
     unit = models.CharField(max_length=8, choices=Unit.choices)
     notes = models.CharField(max_length=240, blank=True)
     checked = models.BooleanField(default=False)
+    is_custom = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["section_order", "section_name", "ingredient_name", "unit"]

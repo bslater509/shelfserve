@@ -547,6 +547,141 @@ class RecipePlannerTests(TestCase):
         item2 = ShoppingListItem.objects.get(shopping_list=shopping_list, ingredient_name="Paper towels")
         self.assertEqual(item2.section_name, "Household")
         self.assertEqual(item2.section_order, 9999)
+        self.assertTrue(item2.is_custom)
+
+    def test_regenerate_shopping_list_preserves_checked_generated_items_and_custom_items(self):
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        recipe = Recipe.objects.create(title="Pasta", servings=2)
+        recipe_ingredient = RecipeIngredient.objects.create(
+            recipe=recipe,
+            ingredient=tomatoes,
+            quantity=Decimal("100"),
+            unit=Unit.GRAM,
+            note="ripe",
+        )
+        entry = MealPlanEntry.objects.create(date="2026-06-01", meal_slot="dinner", recipe=recipe, servings=2)
+        supermarket = Supermarket.objects.create(name="Tesco")
+        SupermarketSection.objects.create(supermarket=supermarket, name="Fruit & veg", order=0)
+        shopping_list = build_shopping_list(supermarket, entry.date, MealPlanEntry.objects.filter(pk=entry.pk))
+        generated_item = shopping_list.items.get(ingredient_name="Tomatoes")
+        generated_item.checked = True
+        generated_item.save(update_fields=["checked"])
+        ShoppingListItem.objects.create(
+            shopping_list=shopping_list,
+            section_name="Dairy",
+            section_order=1,
+            ingredient_name="Milk",
+            quantity=Decimal("1"),
+            unit=Unit.LITRE,
+            checked=True,
+            is_custom=True,
+        )
+
+        recipe_ingredient.quantity = Decimal("200")
+        recipe_ingredient.note = "cherry"
+        recipe_ingredient.save(update_fields=["quantity", "note"])
+        response = self.client.post(reverse("regenerate_shopping_list", args=[shopping_list.pk]))
+
+        self.assertRedirects(response, reverse("shopping_list_detail", args=[shopping_list.pk]))
+        regenerated_item = shopping_list.items.get(ingredient_name="Tomatoes")
+        self.assertEqual(regenerated_item.quantity, Decimal("200.00"))
+        self.assertEqual(regenerated_item.notes, "cherry")
+        self.assertTrue(regenerated_item.checked)
+        custom_item = shopping_list.items.get(ingredient_name="Milk")
+        self.assertTrue(custom_item.is_custom)
+        self.assertTrue(custom_item.checked)
+
+    def test_edit_shopping_item_updates_validated_fields_and_section_order(self):
+        supermarket = Supermarket.objects.create(name="Tesco")
+        SupermarketSection.objects.create(supermarket=supermarket, name="Bakery", order=0)
+        SupermarketSection.objects.create(supermarket=supermarket, name="Dairy", order=1)
+        shopping_list = ShoppingList.objects.create(supermarket=supermarket, week_start=date(2026, 6, 1))
+        item = ShoppingListItem.objects.create(
+            shopping_list=shopping_list,
+            section_name="Bakery",
+            section_order=0,
+            ingredient_name="Bread",
+            quantity=Decimal("1"),
+            unit=Unit.ITEM,
+        )
+
+        response = self.client.post(
+            reverse("edit_shopping_item", args=[item.pk]),
+            {
+                "ingredient_name": "Milk",
+                "quantity": "2",
+                "unit": Unit.LITRE,
+                "section_name": "Dairy",
+                "notes": "Organic",
+            },
+        )
+
+        self.assertRedirects(response, reverse("shopping_list_detail", args=[shopping_list.pk]))
+        item.refresh_from_db()
+        self.assertEqual(item.ingredient_name, "Milk")
+        self.assertEqual(item.quantity, Decimal("2.00"))
+        self.assertEqual(item.unit, Unit.LITRE)
+        self.assertEqual(item.section_name, "Dairy")
+        self.assertEqual(item.section_order, 1)
+        self.assertEqual(item.notes, "Organic")
+
+    def test_delete_shopping_item_removes_only_target_item(self):
+        supermarket = Supermarket.objects.create(name="Tesco")
+        shopping_list = ShoppingList.objects.create(supermarket=supermarket, week_start=date(2026, 6, 1))
+        bread = ShoppingListItem.objects.create(
+            shopping_list=shopping_list,
+            section_name="Bakery",
+            ingredient_name="Bread",
+            quantity=Decimal("1"),
+            unit=Unit.ITEM,
+        )
+        ShoppingListItem.objects.create(
+            shopping_list=shopping_list,
+            section_name="Dairy",
+            ingredient_name="Milk",
+            quantity=Decimal("1"),
+            unit=Unit.LITRE,
+        )
+
+        response = self.client.post(reverse("delete_shopping_item", args=[bread.pk]))
+
+        self.assertRedirects(response, reverse("shopping_list_detail", args=[shopping_list.pk]))
+        self.assertFalse(ShoppingListItem.objects.filter(pk=bread.pk).exists())
+        self.assertEqual(shopping_list.items.count(), 1)
+
+    def test_dashboard_shows_recent_list_completion_count(self):
+        supermarket = Supermarket.objects.create(name="Tesco")
+        shopping_list = ShoppingList.objects.create(supermarket=supermarket, week_start=date(2026, 6, 1))
+        ShoppingListItem.objects.create(
+            shopping_list=shopping_list,
+            section_name="Bakery",
+            ingredient_name="Bread",
+            quantity=Decimal("1"),
+            unit=Unit.ITEM,
+            checked=True,
+        )
+        ShoppingListItem.objects.create(
+            shopping_list=shopping_list,
+            section_name="Dairy",
+            ingredient_name="Milk",
+            quantity=Decimal("1"),
+            unit=Unit.LITRE,
+        )
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "1/2")
+
+    def test_planner_links_latest_shopping_list_for_selected_week(self):
+        supermarket = Supermarket.objects.create(name="Tesco")
+        shopping_list = ShoppingList.objects.create(supermarket=supermarket, week_start=date(2026, 6, 1))
+
+        response = self.client.get(reverse("planner") + "?week=2026-06-01")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("shopping_list_detail", args=[shopping_list.pk]))
+        self.assertContains(response, "Open latest Tesco list")
 
     def test_parse_ingredient_line(self):
         from .parser import parse_ingredient_line

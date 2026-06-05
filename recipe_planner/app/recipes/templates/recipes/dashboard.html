@@ -36,7 +36,7 @@
     {% if recent_lists %}
       <ul class="plain-list">
         {% for list in recent_lists %}
-          <li><span>{{ list.week_start|date:"j M" }}</span><a href="{% url 'shopping_list_detail' list.pk %}">{{ list.supermarket.name }}</a></li>
+          <li><span>{{ list.week_start|date:"j M" }} · {{ list.checked_items }}/{{ list.total_items }}</span><a href="{% url 'shopping_list_detail' list.pk %}">{{ list.supermarket.name }}</a></li>
         {% endfor %}
       </ul>
     {% else %}

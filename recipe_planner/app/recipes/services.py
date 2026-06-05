@@ -1,6 +1,8 @@
 from collections import defaultdict
 from decimal import Decimal
 
+from django.db import transaction
+
 from .models import (
     ShoppingList,
     ShoppingListItem,
@@ -39,8 +41,15 @@ def section_lookup(supermarket):
     return {section.name.strip().lower(): section for section in sections}
 
 
-def build_shopping_list(supermarket, week_start, plan_entries):
-    shopping_list = ShoppingList.objects.create(supermarket=supermarket, week_start=week_start)
+def shopping_item_match_key(section_name, ingredient_name, unit):
+    return (
+        normalise_name(section_name).casefold(),
+        normalise_name(ingredient_name).casefold(),
+        unit,
+    )
+
+
+def planned_shopping_items(supermarket, plan_entries):
     sections = section_lookup(supermarket)
     grouped = defaultdict(lambda: {"quantity": Decimal("0"), "notes": set()})
 
@@ -69,7 +78,6 @@ def build_shopping_list(supermarket, week_start, plan_entries):
         section = sections.get(section_key)
         items.append(
             ShoppingListItem(
-                shopping_list=shopping_list,
                 section_name=payload["section_name"],
                 section_order=section.order if section else 9999,
                 ingredient_name=payload["ingredient_name"],
@@ -79,6 +87,37 @@ def build_shopping_list(supermarket, week_start, plan_entries):
             )
         )
 
+    return items
+
+
+def build_shopping_list(supermarket, week_start, plan_entries):
+    shopping_list = ShoppingList.objects.create(supermarket=supermarket, week_start=week_start)
+    items = planned_shopping_items(supermarket, plan_entries)
+    for item in items:
+        item.shopping_list = shopping_list
+
     ShoppingListItem.objects.bulk_create(items)
     return shopping_list
 
+
+def regenerate_shopping_list(shopping_list, plan_entries):
+    planned_items = planned_shopping_items(shopping_list.supermarket, plan_entries)
+
+    with transaction.atomic():
+        checked_items = {
+            shopping_item_match_key(item.section_name, item.ingredient_name, item.unit): item.checked
+            for item in ShoppingListItem.objects.select_for_update().filter(
+                shopping_list=shopping_list,
+                is_custom=False,
+            )
+        }
+        ShoppingListItem.objects.filter(shopping_list=shopping_list, is_custom=False).delete()
+
+        for item in planned_items:
+            item.shopping_list = shopping_list
+            key = shopping_item_match_key(item.section_name, item.ingredient_name, item.unit)
+            item.checked = checked_items.get(key, False)
+
+        ShoppingListItem.objects.bulk_create(planned_items)
+
+    return shopping_list

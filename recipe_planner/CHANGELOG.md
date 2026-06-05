@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.18
+
+- Add shopping list regeneration that preserves checked generated items while refreshing quantities from the meal plan.
+- Keep custom shopping list items separate from generated recipe items so one-off purchases survive regeneration.
+- Add edit and delete controls for shopping list items.
+- Show shopping list completion counts on list pages and the dashboard.
+- Link from the planner to existing shopping lists for the selected week.
+
 ## 0.1.17
 
 - Fix unicode fraction parsing for imported ingredients.
