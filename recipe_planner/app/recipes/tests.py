@@ -30,7 +30,7 @@ from .models import (
     Unit,
 )
 from .services import build_shopping_list
-from .views import start_of_week
+from .view_helpers import start_of_week
 
 
 MEDIA_ROOT = tempfile.mkdtemp()

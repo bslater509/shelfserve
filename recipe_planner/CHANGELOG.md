@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.24
+
+- Move internal view helper logic into a dedicated helper module to make the recipe views easier to maintain.
+- Keep existing recipe, planner, pantry, supermarket, and shopping-list behavior unchanged.
+
 ## 0.1.23
 
 - Add reusable weekly planner templates that can be saved from the current planner grid.
