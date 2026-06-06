@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.25
+
+- Refactor recipe, planner, pantry, supermarket, and shopping-list views into focused maintenance modules while keeping existing URLs and behavior unchanged.
+- Move page-specific JavaScript and larger planner, shopping-list, and recipe-detail styles into dedicated static assets loaded through Home Assistant ingress-aware URLs.
+
 ## 0.1.24
 
 - Move internal view helper logic into a dedicated helper module to make the recipe views easier to maintain.

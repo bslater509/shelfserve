@@ -1,0 +1,150 @@
+.shopping-section {
+  margin-top: 14px;
+}
+
+.shopping-items li {
+  grid-template-columns: 34px auto minmax(0, 1fr) auto;
+}
+
+.shopping-items li.checked {
+  opacity: .55;
+}
+
+.shopping-items li.checked .item-name {
+  text-decoration: line-through;
+}
+
+.check-button {
+  width: 30px;
+  height: 30px;
+}
+
+.amount {
+  font-weight: 800;
+}
+
+.shopping-items li > .muted {
+  grid-column: 3;
+}
+
+.custom-badge {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: var(--primary);
+  background: var(--soft);
+  font-size: .75rem;
+  font-weight: 700;
+}
+
+.shopping-item-edit {
+  grid-column: 1 / -1;
+  border-top: 1px dashed var(--line);
+  padding-top: 10px;
+}
+
+.shopping-item-edit summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.shopping-edit-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.shopping-item-actions,
+.shopping-delete-form {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.shopping-delete-form {
+  margin-top: 8px;
+}
+
+.latest-list-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.latest-list-links a {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: #ffffff;
+  color: var(--primary);
+  font-size: .9rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.shopping-progress-panel {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 2fr) minmax(240px, auto);
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.shopping-progress-panel p {
+  margin: 4px 0 0;
+}
+
+.shopping-progress-meter {
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+}
+
+.shopping-progress-meter span {
+  display: block;
+  height: 100%;
+  background: var(--primary);
+}
+
+.shopping-progress-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.shopping-progress-controls input[type="search"] {
+  min-width: 180px;
+}
+
+#ajax-toast {
+  display: none;
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+@media (max-width: 900px) {
+  .shopping-progress-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .shopping-progress-controls,
+  .shopping-progress-controls input[type="search"] {
+    width: 100%;
+  }
+
+  .shopping-progress-controls {
+    justify-content: stretch;
+  }
+}
