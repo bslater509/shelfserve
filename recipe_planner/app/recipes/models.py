@@ -174,6 +174,34 @@ class MealPlanEntry(models.Model):
         return f"{self.date} {self.meal_slot}: {self.recipe}"
 
 
+class MealPlanTemplate(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class MealPlanTemplateEntry(models.Model):
+    template = models.ForeignKey(MealPlanTemplate, related_name="entries", on_delete=models.CASCADE)
+    day_offset = models.PositiveSmallIntegerField()
+    meal_slot = models.CharField(max_length=20, choices=MEAL_SLOTS)
+    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE)
+    servings = models.PositiveIntegerField(default=4, validators=[MinValueValidator(1)])
+    note = models.CharField(max_length=160, blank=True)
+
+    class Meta:
+        ordering = ["day_offset", "meal_slot"]
+        unique_together = ("template", "day_offset", "meal_slot")
+
+    def __str__(self):
+        return f"{self.template}: day {self.day_offset + 1} {self.meal_slot}"
+
+
 class PantryItem(models.Model):
     ingredient = models.ForeignKey(Ingredient, on_delete=models.PROTECT)
     quantity = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])

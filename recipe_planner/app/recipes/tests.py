@@ -16,6 +16,8 @@ from .models import (
     AppSetting,
     Ingredient,
     MealPlanEntry,
+    MealPlanTemplate,
+    MealPlanTemplateEntry,
     PantryAdjustment,
     PantryItem,
     Recipe,
@@ -1256,3 +1258,110 @@ class RecipePlannerTests(TestCase):
         self.assertRedirects(response, reverse("planner") + "?week=2026-06-01")
         entry = MealPlanEntry.objects.get(date=date(2026, 6, 1), meal_slot="dinner")
         self.assertEqual(entry.note, "Make extra salsa")
+
+    def test_planner_saves_visible_grid_as_template(self):
+        recipe = Recipe.objects.create(title="Tacos", servings=4)
+
+        response = self.client.post(
+            reverse("planner") + "?week=2026-06-01",
+            {
+                "planner_action": "save_template",
+                "template_name": "Family favourites",
+                "recipe_2026-06-01_dinner": str(recipe.pk),
+                "servings_2026-06-01_dinner": "3",
+                "note_2026-06-01_dinner": "Make extra salsa",
+            },
+        )
+
+        self.assertRedirects(response, reverse("planner") + "?week=2026-06-01")
+        self.assertFalse(MealPlanEntry.objects.exists())
+        template = MealPlanTemplate.objects.get(name="Family favourites")
+        template_entry = template.entries.get()
+        self.assertEqual(template_entry.day_offset, 0)
+        self.assertEqual(template_entry.meal_slot, "dinner")
+        self.assertEqual(template_entry.recipe, recipe)
+        self.assertEqual(template_entry.servings, 3)
+        self.assertEqual(template_entry.note, "Make extra salsa")
+
+    def test_planner_template_preview_does_not_create_entries(self):
+        recipe = Recipe.objects.create(title="Tacos", servings=4)
+        template = MealPlanTemplate.objects.create(name="Family favourites")
+        MealPlanTemplateEntry.objects.create(
+            template=template,
+            day_offset=2,
+            meal_slot="lunch",
+            recipe=recipe,
+            servings=2,
+            note="Use leftovers",
+        )
+
+        response = self.client.get(reverse("planner") + f"?week=2026-06-08&template={template.pk}")
+
+        self.assertEqual(response.status_code, 200)
+        entries = response.context["entries"]
+        key = "2026-06-10_lunch"
+        self.assertIn(key, entries)
+        self.assertEqual(entries[key].recipe_id, recipe.pk)
+        self.assertEqual(entries[key].servings, 2)
+        self.assertEqual(entries[key].note, "Use leftovers")
+        self.assertTrue(response.context["template_preview"])
+        self.assertFalse(MealPlanEntry.objects.exists())
+
+    def test_planner_saves_template_preview_as_meal_plan(self):
+        recipe = Recipe.objects.create(title="Tacos", servings=4)
+
+        response = self.client.post(
+            reverse("planner") + "?week=2026-06-08",
+            {
+                "planner_action": "save_plan",
+                "recipe_2026-06-10_lunch": str(recipe.pk),
+                "servings_2026-06-10_lunch": "2",
+                "note_2026-06-10_lunch": "Use leftovers",
+            },
+        )
+
+        self.assertRedirects(response, reverse("planner") + "?week=2026-06-08")
+        entry = MealPlanEntry.objects.get(date=date(2026, 6, 10), meal_slot="lunch")
+        self.assertEqual(entry.recipe, recipe)
+        self.assertEqual(entry.servings, 2)
+        self.assertEqual(entry.note, "Use leftovers")
+
+    def test_planner_saving_existing_template_name_replaces_entries(self):
+        tacos = Recipe.objects.create(title="Tacos", servings=4)
+        pasta = Recipe.objects.create(title="Pasta", servings=4)
+        template = MealPlanTemplate.objects.create(name="Family favourites")
+        MealPlanTemplateEntry.objects.create(
+            template=template,
+            day_offset=0,
+            meal_slot="dinner",
+            recipe=tacos,
+            servings=4,
+        )
+
+        response = self.client.post(
+            reverse("planner") + "?week=2026-06-01",
+            {
+                "planner_action": "save_template",
+                "template_name": "family favourites",
+                "recipe_2026-06-02_lunch": str(pasta.pk),
+                "servings_2026-06-02_lunch": "5",
+            },
+        )
+
+        self.assertRedirects(response, reverse("planner") + "?week=2026-06-01")
+        self.assertEqual(MealPlanTemplate.objects.count(), 1)
+        template.refresh_from_db()
+        self.assertEqual(template.name, "family favourites")
+        template_entry = template.entries.get()
+        self.assertEqual(template_entry.day_offset, 1)
+        self.assertEqual(template_entry.meal_slot, "lunch")
+        self.assertEqual(template_entry.recipe, pasta)
+        self.assertEqual(template_entry.servings, 5)
+
+    def test_planner_template_delete(self):
+        template = MealPlanTemplate.objects.create(name="Family favourites")
+
+        response = self.client.post(reverse("delete_meal_plan_template", args=[template.pk]))
+
+        self.assertRedirects(response, reverse("planner"))
+        self.assertFalse(MealPlanTemplate.objects.exists())

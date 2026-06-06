@@ -40,6 +40,66 @@
   </div>
 </section>
 
+{% if template_preview and selected_template %}
+  <section class="panel template-preview-panel">
+    <div>
+      <h2>Template preview</h2>
+      <p class="muted font-outfit">Previewing {{ selected_template.name }} on this week. Save the meal plan to apply it.</p>
+    </div>
+    <a class="button" href="{% url 'planner' %}?week={{ week_start|date:'Y-m-d' }}">Cancel preview</a>
+  </section>
+{% endif %}
+
+<section class="panel planner-template-panel">
+  <div class="section-heading">
+    <div>
+      <h2>Reusable templates</h2>
+      <p class="muted font-outfit">Save the current grid or preview a saved week template.</p>
+    </div>
+  </div>
+  <div class="template-tool-grid">
+    <div class="template-save-control">
+      <label for="template_name">Template name</label>
+      <div class="selector-with-button">
+        <input id="template_name" name="template_name" form="planner-main-form" placeholder="e.g. Family favourites">
+        <button class="button" type="submit" name="planner_action" value="save_template" form="planner-main-form">
+          Save as template
+        </button>
+      </div>
+    </div>
+    <form method="get" action="{% url 'planner' %}" class="template-apply-control">
+      <input type="hidden" name="week" value="{{ week_start|date:'Y-m-d' }}">
+      <label for="template_apply">Apply template</label>
+      <div class="selector-with-button">
+        <select id="template_apply" name="template" required>
+          <option value="">Choose template...</option>
+          {% for template in templates %}
+            <option value="{{ template.pk }}"{% if selected_template and selected_template.pk == template.pk %} selected{% endif %}>
+              {{ template.name }} ({{ template.entries.count }} meals)
+            </option>
+          {% endfor %}
+        </select>
+        <button class="button primary" type="submit">Preview</button>
+      </div>
+    </form>
+  </div>
+  {% if templates %}
+    <div class="template-list">
+      {% for template in templates %}
+        <div class="template-list-item">
+          <span>{{ template.name }} <small>{{ template.entries.count }} meals</small></span>
+          <form method="post" action="{% url 'delete_meal_plan_template' template.pk %}" onsubmit="return confirm('Delete this planner template?');">
+            {% csrf_token %}
+            <button class="button compact danger-button-style" type="submit">Delete</button>
+          </form>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty">No templates saved yet.</p>
+  {% endif %}
+</section>
+
 <form method="post" class="planner-form" id="planner-main-form">
   {% csrf_token %}
   <div class="planner-grid-wrapper">
@@ -124,7 +184,7 @@
   </div>
 
   <div class="planner-actions-footer">
-    <button class="button primary large-button-style" type="submit">
+    <button class="button primary large-button-style" type="submit" name="planner_action" value="save_plan">
       <svg class="icon-inline" viewBox="0 0 24 24"><path fill="currentColor" d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z"/></svg>
       Save meal plan
     </button>

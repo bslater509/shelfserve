@@ -14,6 +14,7 @@ urlpatterns = [
     path("pantry/items/<int:pk>/edit/", views.edit_pantry_item, name="edit_pantry_item"),
     path("pantry/items/<int:pk>/delete/", views.delete_pantry_item, name="delete_pantry_item"),
     path("planner/", views.planner, name="planner"),
+    path("planner/templates/<int:pk>/delete/", views.delete_meal_plan_template, name="delete_meal_plan_template"),
     path("planner/entries/<int:pk>/cook/", views.cook_planner_entry, name="cook_planner_entry"),
     path("planner/entries/<int:pk>/undo-cooked/", views.undo_cook_planner_entry, name="undo_cook_planner_entry"),
     path("shopping/generate/", views.generate_shopping_list, name="generate_shopping_list"),

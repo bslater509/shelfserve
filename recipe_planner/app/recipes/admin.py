@@ -4,6 +4,8 @@ from .models import (
     AppSetting,
     Ingredient,
     MealPlanEntry,
+    MealPlanTemplate,
+    MealPlanTemplateEntry,
     Recipe,
     RecipeIngredient,
     ShoppingList,
@@ -32,5 +34,7 @@ admin.site.register(Ingredient)
 admin.site.register(Supermarket)
 admin.site.register(SupermarketSection)
 admin.site.register(MealPlanEntry)
+admin.site.register(MealPlanTemplate)
+admin.site.register(MealPlanTemplateEntry)
 admin.site.register(ShoppingList)
 admin.site.register(ShoppingListItem)

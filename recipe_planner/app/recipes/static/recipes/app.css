@@ -682,6 +682,55 @@ textarea {
   margin-bottom: 32px;
 }
 
+.planner-template-panel,
+.template-preview-panel {
+  margin-top: 16px;
+}
+
+.template-preview-panel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border-color: var(--primary);
+  background: var(--soft);
+}
+
+.template-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.template-save-control,
+.template-apply-control {
+  display: grid;
+  gap: 8px;
+}
+
+.template-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.template-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.template-list-item span {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+
 /* Supermarket Selector styling */
 .list-generation-panel {
   background: linear-gradient(135deg, #ffffff 0%, var(--soft) 100%);
@@ -1106,6 +1155,19 @@ textarea {
   .tool-group .button {
     flex: 1;
     justify-content: center;
+  }
+
+  .template-preview-panel,
+  .template-tool-grid,
+  .template-list-item,
+  .selector-with-button {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .template-preview-panel {
+    display: grid;
   }
 }
 

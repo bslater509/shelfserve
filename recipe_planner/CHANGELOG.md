@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.23
+
+- Add reusable weekly planner templates that can be saved from the current planner grid.
+- Allow saved templates to be previewed on any planner week before saving them as the active meal plan.
+- Add in-planner template deletion controls.
+
 ## 0.1.22
 
 - Refresh an existing supermarket/week shopping list instead of creating duplicate lists.

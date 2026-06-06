@@ -16,6 +16,8 @@ from .models import (
     Ingredient,
     MEAL_SLOTS,
     MealPlanEntry,
+    MealPlanTemplate,
+    MealPlanTemplateEntry,
     PantryItem,
     Recipe,
     RecipeIngredient,
@@ -285,13 +287,32 @@ def planner(request):
     recipes = Recipe.objects.prefetch_related("tags")
     copy_from_str = request.GET.get("copy_from")
     copy_from_date = parse_date(copy_from_str)
+    template_id = request.GET.get("template")
+    selected_template = None
+    template_preview = False
 
     if request.method == "POST":
-        save_planner_entries(request.POST, days)
-        messages.success(request, "Meal plan saved.")
+        if request.POST.get("planner_action") == "save_template":
+            template_name = normalise_name(request.POST.get("template_name", ""))[:120]
+            if not template_name:
+                messages.error(request, "Template name is required.")
+                return redirect(f"{reverse('planner')}?week={week_start.isoformat()}")
+            saved_template = save_meal_plan_template(template_name, request.POST, days)
+            messages.success(request, f"Saved {saved_template.name} as a reusable planner template.")
+        else:
+            save_planner_entries(request.POST, days)
+            messages.success(request, "Meal plan saved.")
         return redirect(f"{reverse('planner')}?week={week_start.isoformat()}")
 
-    if copy_from_date:
+    if template_id:
+        selected_template = get_object_or_404(
+            MealPlanTemplate.objects.prefetch_related("entries__recipe"),
+            pk=template_id,
+        )
+        entries = entries_from_template(selected_template, week_start)
+        template_preview = True
+        messages.info(request, f"Previewing template {selected_template.name}. Click 'Save meal plan' to apply it.")
+    elif copy_from_date:
         copy_from_start = start_of_week(copy_from_date, settings.week_start)
         entries = {}
         for entry in MealPlanEntry.objects.filter(
@@ -329,12 +350,24 @@ def planner(request):
             "entries": entries,
             "supermarkets": supermarkets,
             "latest_lists_by_supermarket": latest_lists_by_supermarket,
+            "templates": MealPlanTemplate.objects.prefetch_related("entries").all(),
+            "selected_template": selected_template,
+            "template_preview": template_preview,
             "week_start": week_start,
             "previous_week": week_start - timedelta(days=7),
             "next_week": week_start + timedelta(days=7),
             "today_week": start_of_week(date.today(), settings.week_start),
         },
     )
+
+
+@require_POST
+def delete_meal_plan_template(request, pk):
+    template = get_object_or_404(MealPlanTemplate, pk=pk)
+    template_name = template.name
+    template.delete()
+    messages.success(request, f"Deleted planner template {template_name}.")
+    return redirect(request.META.get("HTTP_REFERER", reverse("planner")))
 
 
 @require_POST
@@ -675,21 +708,22 @@ def save_planner_entries(post_data, days):
         (entry.date, entry.meal_slot): entry
         for entry in MealPlanEntry.objects.filter(date__range=(days[0], days[-1])).select_related("recipe")
     }
+    submitted_entries = collect_planner_entries(post_data, days)
     with transaction.atomic():
         for day in days:
             for slot, _label in MEAL_SLOTS:
                 existing = existing_entries.get((day, slot))
-                recipe_id = post_data.get(f"recipe_{day.isoformat()}_{slot}")
-                servings = parse_positive_int(post_data.get(f"servings_{day.isoformat()}_{slot}") or "1")
-                note = normalise_name(post_data.get(f"note_{day.isoformat()}_{slot}", ""))[:160]
+                submitted = submitted_entries.get((day, slot))
 
-                if not recipe_id:
+                if not submitted:
                     if existing:
                         undo_meal_cooked(existing)
                         existing.delete()
                     continue
 
-                recipe = get_object_or_404(Recipe, pk=recipe_id)
+                recipe = submitted["recipe"]
+                servings = submitted["servings"]
+                note = submitted["note"]
                 if existing and existing.recipe_id == recipe.pk and existing.servings == servings and existing.note == note:
                     continue
 
@@ -697,6 +731,61 @@ def save_planner_entries(post_data, days):
                     undo_meal_cooked(existing)
                     existing.delete()
                 MealPlanEntry.objects.create(date=day, meal_slot=slot, recipe=recipe, servings=servings, note=note)
+
+
+def collect_planner_entries(post_data, days):
+    entries = {}
+    for day in days:
+        for slot, _label in MEAL_SLOTS:
+            recipe_id = post_data.get(f"recipe_{day.isoformat()}_{slot}")
+            if not recipe_id:
+                continue
+            recipe = get_object_or_404(Recipe, pk=recipe_id)
+            entries[(day, slot)] = {
+                "recipe": recipe,
+                "servings": parse_positive_int(post_data.get(f"servings_{day.isoformat()}_{slot}") or "1"),
+                "note": normalise_name(post_data.get(f"note_{day.isoformat()}_{slot}", ""))[:160],
+            }
+    return entries
+
+
+def save_meal_plan_template(name, post_data, days):
+    submitted_entries = collect_planner_entries(post_data, days)
+    existing_template = MealPlanTemplate.objects.filter(name__iexact=name).first()
+    with transaction.atomic():
+        template = existing_template or MealPlanTemplate(name=name)
+        template.name = name
+        template.save()
+        template.entries.all().delete()
+        template_entries = []
+        for (day, slot), submitted in submitted_entries.items():
+            template_entries.append(
+                MealPlanTemplateEntry(
+                    template=template,
+                    day_offset=(day - days[0]).days,
+                    meal_slot=slot,
+                    recipe=submitted["recipe"],
+                    servings=submitted["servings"],
+                    note=submitted["note"],
+                )
+            )
+        MealPlanTemplateEntry.objects.bulk_create(template_entries)
+    return template
+
+
+def entries_from_template(template, week_start):
+    entries = {}
+    for template_entry in template.entries.all():
+        target_date = week_start + timedelta(days=template_entry.day_offset)
+        copied_entry = MealPlanEntry(
+            date=target_date,
+            meal_slot=template_entry.meal_slot,
+            recipe=template_entry.recipe,
+            servings=template_entry.servings,
+            note=template_entry.note,
+        )
+        entries[f"{target_date.isoformat()}_{template_entry.meal_slot}"] = copied_entry
+    return entries
 
 
 def parse_positive_int(value):
