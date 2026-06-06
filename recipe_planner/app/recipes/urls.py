@@ -20,6 +20,7 @@ urlpatterns = [
     path("shopping/<int:pk>/", views.shopping_list_detail, name="shopping_list_detail"),
     path("shopping/<int:pk>/add-item/", views.add_shopping_item, name="add_shopping_item"),
     path("shopping/<int:pk>/regenerate/", views.regenerate_existing_shopping_list, name="regenerate_shopping_list"),
+    path("shopping/<int:pk>/restock/", views.restock_shopping_list, name="restock_shopping_list"),
     path("shopping/items/<int:pk>/edit/", views.edit_shopping_item, name="edit_shopping_item"),
     path("shopping/items/<int:pk>/delete/", views.delete_shopping_item, name="delete_shopping_item"),
     path("shopping/items/<int:pk>/toggle/", views.toggle_shopping_item, name="toggle_shopping_item"),

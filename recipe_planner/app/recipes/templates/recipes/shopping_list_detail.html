@@ -12,6 +12,10 @@
       {% csrf_token %}
       <button class="button primary" type="submit">Regenerate list</button>
     </form>
+    <form method="post" action="{% url 'restock_shopping_list' shopping_list.pk %}">
+      {% csrf_token %}
+      <button class="button" type="submit">Restock pantry from checked</button>
+    </form>
     <a class="button" href="{% url 'planner' %}?week={{ shopping_list.week_start|date:'Y-m-d' }}">Planner</a>
   </div>
 </section>
@@ -51,6 +55,9 @@
           <span class="amount">{{ item.quantity|quantity }} {{ item.unit }}</span>
           <span class="item-name">{{ item.ingredient_name }}</span>
           <div class="item-meta">
+            {% if item.pantry_used_quantity %}
+              <span class="muted">pantry covered {{ item.pantry_used_quantity|quantity }} {{ item.pantry_used_unit }}</span>
+            {% endif %}
             {% if item.notes %}<span class="muted">{{ item.notes }}</span>{% endif %}
             {% if item.is_custom %}<span class="custom-badge">Custom</span>{% endif %}
           </div>

@@ -87,6 +87,11 @@ class Recipe(models.Model):
     title = models.CharField(max_length=160)
     image = models.ImageField(upload_to="recipes/", blank=True)
     servings = models.PositiveIntegerField(default=4, validators=[MinValueValidator(1)])
+    prep_minutes = models.PositiveIntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
+    cook_minutes = models.PositiveIntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
+    source_url = models.URLField(blank=True)
+    favorite = models.BooleanField(default=False)
+    last_cooked_at = models.DateTimeField(null=True, blank=True)
     tags = models.ManyToManyField(Tag, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
@@ -158,6 +163,7 @@ class MealPlanEntry(models.Model):
     meal_slot = models.CharField(max_length=20, choices=MEAL_SLOTS)
     recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE)
     servings = models.PositiveIntegerField(default=4, validators=[MinValueValidator(1)])
+    note = models.CharField(max_length=160, blank=True)
     pantry_consumed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -172,6 +178,13 @@ class PantryItem(models.Model):
     ingredient = models.ForeignKey(Ingredient, on_delete=models.PROTECT)
     quantity = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
     unit = models.CharField(max_length=8, choices=Unit.choices)
+    low_stock_threshold = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0"))],
+    )
     note = models.CharField(max_length=160, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
@@ -218,6 +231,8 @@ class ShoppingListItem(models.Model):
     ingredient_name = models.CharField(max_length=120)
     quantity = models.DecimalField(max_digits=10, decimal_places=2)
     unit = models.CharField(max_length=8, choices=Unit.choices)
+    pantry_used_quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0"))
+    pantry_used_unit = models.CharField(max_length=8, choices=Unit.choices, blank=True)
     notes = models.CharField(max_length=240, blank=True)
     checked = models.BooleanField(default=False)
     is_custom = models.BooleanField(default=False)

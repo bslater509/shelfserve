@@ -59,6 +59,22 @@
       <p class="empty">No shopping lists yet.</p>
     {% endif %}
   </article>
+
+  <article class="panel">
+    <h2>Low stock</h2>
+    {% if low_stock_items %}
+      <ul class="plain-list">
+        {% for item in low_stock_items %}
+          <li>
+            <span>{{ item.quantity }} {{ item.unit }} left</span>
+            <a href="{% url 'pantry_list' %}">{{ item.ingredient.name }}</a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty">No low-stock pantry items.</p>
+    {% endif %}
+  </article>
 </section>
 
 <section class="panel dashboard-next">

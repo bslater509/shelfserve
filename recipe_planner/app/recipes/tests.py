@@ -497,6 +497,7 @@ class RecipePlannerTests(TestCase):
                 "ingredient_name": "Plain flour",
                 "quantity": "1.5",
                 "unit": Unit.KILOGRAM,
+                "low_stock_threshold": "0.5",
                 "note": "Cupboard",
             },
         )
@@ -504,6 +505,7 @@ class RecipePlannerTests(TestCase):
         pantry_item = PantryItem.objects.get(ingredient__name="Plain flour")
         self.assertEqual(pantry_item.quantity, Decimal("1.50"))
         self.assertEqual(pantry_item.unit, Unit.KILOGRAM)
+        self.assertEqual(pantry_item.low_stock_threshold, Decimal("0.50"))
 
         response = self.client.post(
             reverse("edit_pantry_item", args=[pantry_item.pk]),
@@ -511,17 +513,31 @@ class RecipePlannerTests(TestCase):
                 "ingredient_name": "Plain flour",
                 "quantity": "2",
                 "unit": Unit.KILOGRAM,
+                "low_stock_threshold": "1",
                 "note": "Restocked",
             },
         )
         self.assertRedirects(response, reverse("pantry_list"))
         pantry_item.refresh_from_db()
         self.assertEqual(pantry_item.quantity, Decimal("2.00"))
+        self.assertEqual(pantry_item.low_stock_threshold, Decimal("1.00"))
         self.assertEqual(pantry_item.note, "Restocked")
 
         response = self.client.post(reverse("delete_pantry_item", args=[pantry_item.pk]))
         self.assertRedirects(response, reverse("pantry_list"))
         self.assertFalse(PantryItem.objects.filter(pk=pantry_item.pk).exists())
+
+    def test_dashboard_shows_low_stock_pantry_items(self):
+        flour = Ingredient.objects.create(name="Plain flour", category="Bakery")
+        sugar = Ingredient.objects.create(name="Sugar", category="Baking")
+        PantryItem.objects.create(ingredient=flour, quantity=Decimal("0.25"), unit=Unit.KILOGRAM, low_stock_threshold=Decimal("0.50"))
+        PantryItem.objects.create(ingredient=sugar, quantity=Decimal("2"), unit=Unit.KILOGRAM, low_stock_threshold=Decimal("0.50"))
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Plain flour")
+        self.assertNotContains(response, "Sugar")
 
     def test_shopping_list_subtracts_matching_pantry_stock(self):
         tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
@@ -536,8 +552,64 @@ class RecipePlannerTests(TestCase):
 
         self.assertEqual(item.quantity, Decimal("400.00"))
         self.assertEqual(item.unit, Unit.GRAM)
+        self.assertEqual(item.pantry_used_quantity, Decimal("600.00"))
+        self.assertEqual(item.pantry_used_unit, Unit.GRAM)
         self.assertIn("pantry used: 600 g", item.notes)
         self.assertEqual(PantryItem.objects.get(pk=PantryItem.objects.first().pk).quantity, Decimal("0.60"))
+
+    def test_generate_shopping_list_refreshes_existing_week_list(self):
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        recipe = Recipe.objects.create(title="Pasta", servings=2)
+        recipe_ingredient = RecipeIngredient.objects.create(recipe=recipe, ingredient=tomatoes, quantity=Decimal("100"), unit=Unit.GRAM)
+        entry = MealPlanEntry.objects.create(date="2026-06-01", meal_slot="dinner", recipe=recipe, servings=2)
+        supermarket = Supermarket.objects.create(name="Tesco")
+
+        response = self.client.post(
+            reverse("generate_shopping_list"),
+            {"supermarket": supermarket.pk, "week_start": "2026-06-01"},
+        )
+        shopping_list = ShoppingList.objects.get()
+        self.assertRedirects(response, reverse("shopping_list_detail", args=[shopping_list.pk]))
+
+        recipe_ingredient.quantity = Decimal("250")
+        recipe_ingredient.save(update_fields=["quantity"])
+        response = self.client.post(
+            reverse("generate_shopping_list"),
+            {"supermarket": supermarket.pk, "week_start": "2026-06-01"},
+        )
+
+        self.assertRedirects(response, reverse("shopping_list_detail", args=[shopping_list.pk]))
+        self.assertEqual(ShoppingList.objects.count(), 1)
+        self.assertEqual(shopping_list.items.get(ingredient_name="Tomatoes").quantity, Decimal("250.00"))
+
+    def test_restock_checked_shopping_items_updates_pantry(self):
+        supermarket = Supermarket.objects.create(name="Tesco")
+        shopping_list = ShoppingList.objects.create(supermarket=supermarket, week_start=date(2026, 6, 1))
+        checked = ShoppingListItem.objects.create(
+            shopping_list=shopping_list,
+            section_name="Dairy",
+            ingredient_name="Milk",
+            quantity=Decimal("2"),
+            unit=Unit.LITRE,
+            checked=True,
+        )
+        ShoppingListItem.objects.create(
+            shopping_list=shopping_list,
+            section_name="Bakery",
+            ingredient_name="Bread",
+            quantity=Decimal("1"),
+            unit=Unit.ITEM,
+            checked=False,
+        )
+
+        response = self.client.post(reverse("restock_shopping_list", args=[shopping_list.pk]))
+
+        self.assertRedirects(response, reverse("shopping_list_detail", args=[shopping_list.pk]))
+        pantry_item = PantryItem.objects.get(ingredient__name=checked.ingredient_name)
+        self.assertEqual(pantry_item.quantity, Decimal("2.00"))
+        self.assertEqual(pantry_item.unit, Unit.LITRE)
+        self.assertEqual(pantry_item.ingredient.category, "Dairy")
+        self.assertFalse(PantryItem.objects.filter(ingredient__name="Bread").exists())
 
     def test_shopping_list_omits_items_fully_covered_by_pantry(self):
         tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
@@ -682,8 +754,10 @@ class RecipePlannerTests(TestCase):
         self.assertRedirects(response, reverse("planner") + "?week=2026-06-01")
         pantry_item.refresh_from_db()
         entry.refresh_from_db()
+        recipe.refresh_from_db()
         self.assertEqual(pantry_item.quantity, Decimal("0.50"))
         self.assertIsNotNone(entry.pantry_consumed_at)
+        self.assertIsNotNone(recipe.last_cooked_at)
         self.assertEqual(PantryAdjustment.objects.filter(meal_plan_entry=entry).count(), 1)
 
         self.client.post(reverse("cook_planner_entry", args=[entry.pk]))
@@ -850,6 +924,38 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(list(response.context["recipes"]), [small, large])
         self.assertEqual(response.context["sort"], "servings")
 
+    def test_recipe_list_filters_by_favorites_and_missing_images(self):
+        favorite = Recipe.objects.create(title="Favorite curry", servings=2, favorite=True)
+        Recipe.objects.create(title="Plain pasta", servings=2)
+
+        response = self.client.get(reverse("recipe_list") + "?filter=favorites")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.context["recipes"]), [favorite])
+        self.assertEqual(response.context["selected_filter"], "favorites")
+
+        response = self.client.get(reverse("recipe_list") + "?filter=missing_image")
+
+        self.assertContains(response, "Favorite curry")
+        self.assertContains(response, "Plain pasta")
+
+    def test_recipe_detail_shows_metadata(self):
+        recipe = Recipe.objects.create(
+            title="Metadata soup",
+            servings=2,
+            prep_minutes=10,
+            cook_minutes=30,
+            source_url="https://example.com/soup",
+            favorite=True,
+        )
+
+        response = self.client.get(reverse("recipe_detail", args=[recipe.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Prep 10 min")
+        self.assertContains(response, "Cook 30 min")
+        self.assertContains(response, "https://example.com/soup")
+
     def test_planner_links_latest_shopping_list_for_selected_week(self):
         supermarket = Supermarket.objects.create(name="Tesco")
         shopping_list = ShoppingList.objects.create(supermarket=supermarket, week_start=date(2026, 6, 1))
@@ -911,6 +1017,24 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(res["ingredients"][0]["name"], "eggs")
         self.assertEqual(res["ingredients"][0]["quantity"], "2.00")
         self.assertEqual(res["steps"][0]["text"], "Melt butter.")
+
+    def test_parse_recipe_text_detects_title_and_servings(self):
+        from .parser import parse_recipe_text
+        raw_text = (
+            "Lemon pasta\n"
+            "Serves 3\n"
+            "Ingredients\n"
+            "200g spaghetti\n"
+            "Instructions\n"
+            "Boil pasta for 10 minutes.\n"
+        )
+
+        res = parse_recipe_text(raw_text)
+
+        self.assertEqual(res["title"], "Lemon pasta")
+        self.assertEqual(res["servings"], 3)
+        self.assertEqual(res["ingredients"][0]["name"], "spaghetti")
+        self.assertEqual(res["steps"][0]["duration_minutes"], 10)
 
     def test_recipe_import_views_and_prepopulation(self):
         # 1. Test POST to recipe_import view with raw text
@@ -1095,7 +1219,7 @@ class RecipePlannerTests(TestCase):
         
         # Source week: June 1st, 2026 (Monday)
         source_date = date(2026, 6, 1)
-        MealPlanEntry.objects.create(date=source_date, meal_slot="dinner", recipe=recipe, servings=4)
+        MealPlanEntry.objects.create(date=source_date, meal_slot="dinner", recipe=recipe, servings=4, note="Use leftovers")
 
         # Target week: June 8th, 2026 (Monday)
         target_date = date(2026, 6, 8)
@@ -1112,6 +1236,23 @@ class RecipePlannerTests(TestCase):
         self.assertIn(key, entries)
         self.assertEqual(entries[key].recipe_id, recipe.pk)
         self.assertEqual(entries[key].servings, 4)
+        self.assertEqual(entries[key].note, "Use leftovers")
 
         # Verify that no entries were actually saved in the DB for the target week yet
         self.assertFalse(MealPlanEntry.objects.filter(date=target_date).exists())
+
+    def test_planner_saves_meal_notes(self):
+        recipe = Recipe.objects.create(title="Tacos", servings=4)
+
+        response = self.client.post(
+            reverse("planner") + "?week=2026-06-01",
+            {
+                "recipe_2026-06-01_dinner": str(recipe.pk),
+                "servings_2026-06-01_dinner": "4",
+                "note_2026-06-01_dinner": "Make extra salsa",
+            },
+        )
+
+        self.assertRedirects(response, reverse("planner") + "?week=2026-06-01")
+        entry = MealPlanEntry.objects.get(date=date(2026, 6, 1), meal_slot="dinner")
+        self.assertEqual(entry.note, "Make extra salsa")

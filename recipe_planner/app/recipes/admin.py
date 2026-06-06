@@ -21,7 +21,7 @@ class RecipeIngredientInline(admin.TabularInline):
 
 @admin.register(Recipe)
 class RecipeAdmin(admin.ModelAdmin):
-    list_display = ("title", "servings", "updated_at")
+    list_display = ("title", "servings", "favorite", "last_cooked_at", "updated_at")
     search_fields = ("title", "ingredients__ingredient__name", "tags__name")
     inlines = [RecipeIngredientInline]
 
@@ -34,4 +34,3 @@ admin.site.register(SupermarketSection)
 admin.site.register(MealPlanEntry)
 admin.site.register(ShoppingList)
 admin.site.register(ShoppingListItem)
-

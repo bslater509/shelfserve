@@ -21,6 +21,12 @@
       {% endif %}
     </label>
     <label>Servings {{ form.servings }}</label>
+    <div class="grid two">
+      <label>Prep minutes {{ form.prep_minutes }}</label>
+      <label>Cook minutes {{ form.cook_minutes }}</label>
+    </div>
+    <label>Source URL {{ form.source_url }}</label>
+    <label class="toggle-row">{{ form.favorite }} <span>Favorite</span></label>
     <label>Tags {{ form.tags_text }}</label>
   </section>
 

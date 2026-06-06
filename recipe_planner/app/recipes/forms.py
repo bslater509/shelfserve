@@ -12,7 +12,7 @@ class RecipeForm(forms.ModelForm):
 
     class Meta:
         model = Recipe
-        fields = ["title", "image", "servings"]
+        fields = ["title", "image", "servings", "prep_minutes", "cook_minutes", "source_url", "favorite"]
 
 
 class SupermarketForm(forms.ModelForm):
@@ -26,7 +26,7 @@ class PantryItemForm(forms.ModelForm):
 
     class Meta:
         model = PantryItem
-        fields = ["ingredient_name", "quantity", "unit", "note"]
+        fields = ["ingredient_name", "quantity", "unit", "low_stock_threshold", "note"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

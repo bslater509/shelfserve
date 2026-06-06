@@ -166,6 +166,26 @@ def parse_servings(yields):
     return 4
 
 
+def scraper_minutes(scraper, method_name):
+    method = getattr(scraper, method_name, None)
+    if not method:
+        return None
+    try:
+        value = method()
+    except Exception:
+        return None
+    if value in (None, ""):
+        return None
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        match = re.search(r"\d+", str(value))
+        if not match:
+            return None
+        value = int(match.group())
+    return max(1, value) if value else None
+
+
 def parse_ingredient_line(line):
     """Parse a single ingredient string into structured fields."""
     line = line.strip()
@@ -343,9 +363,12 @@ def parse_recipe_url(url):
     return {
         "title": title,
         "servings": servings,
+        "prep_minutes": scraper_minutes(scraper, "prep_time"),
+        "cook_minutes": scraper_minutes(scraper, "cook_time"),
         "steps": steps,
         "ingredients": ingredients,
         "tags_list": clean_tags,
+        "source_url": url,
         "image_path": download_recipe_image(scraper.image()),
     }
 
@@ -359,13 +382,43 @@ def parse_recipe_text(text):
     ingredients = []
     steps_list = []
     state = 1
+    content_lines = [line for line in lines if line]
+    first_content_line = content_lines[0] if content_lines else ""
+    possible_headings = {
+        "ingredients",
+        "ingredient",
+        "ingredients list",
+        "ingredient list",
+        "shopping list",
+        "instructions",
+        "instruction",
+        "directions",
+        "direction",
+        "steps",
+        "step",
+        "method",
+        "preparation",
+    }
+    skip_title_line = False
+    if first_content_line:
+        first_clean = re.sub(r"[^\w\s]", "", first_content_line.lower()).strip()
+        if first_clean not in possible_headings and not re.match(r"^\d", first_content_line):
+            title = first_content_line
+            skip_title_line = True
 
     for line in lines:
         if not line:
             continue
+        if skip_title_line and line == first_content_line:
+            skip_title_line = False
+            continue
 
         line_lower = line.lower()
         line_clean = re.sub(r"[^\w\s]", "", line_lower).strip()
+        servings_match = re.search(r"\b(?:serves|servings|yield|yields)\s*:?\s*(\d+)\b", line_lower)
+        if servings_match:
+            servings = max(1, int(servings_match.group(1)))
+            continue
         if line_clean in ["ingredients", "ingredient", "ingredients list", "ingredient list", "shopping list"]:
             state = 1
             continue
@@ -392,8 +445,11 @@ def parse_recipe_text(text):
     return {
         "title": title,
         "servings": servings,
+        "prep_minutes": None,
+        "cook_minutes": None,
         "steps": steps,
         "ingredients": ingredients,
         "tags_list": ["imported"],
+        "source_url": "",
         "image_path": "",
     }

@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.core.files.storage import default_storage
-from django.db import transaction
+from django.db import models, transaction
 from django.db.models import Count, Q
 from django.http import HttpResponseBadRequest, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -33,6 +33,7 @@ from .services import (
     normalise_name,
     normalise_tag_name,
     regenerate_shopping_list,
+    restock_pantry_from_checked_items,
     undo_meal_cooked,
 )
 from .parser import parse_recipe_url, parse_recipe_text
@@ -53,6 +54,10 @@ def dashboard(request):
         "supermarket_count": Supermarket.objects.count(),
         "planned_this_week_count": MealPlanEntry.objects.filter(date__range=(week_start, week_end)).count(),
         "open_list_count": ShoppingList.objects.filter(items__checked=False).distinct().count(),
+        "low_stock_items": PantryItem.objects.select_related("ingredient").filter(
+            low_stock_threshold__isnull=False,
+            quantity__lte=models.F("low_stock_threshold"),
+        )[:5],
         "today_entries": MealPlanEntry.objects.filter(date=today).select_related("recipe"),
         "upcoming_entries": MealPlanEntry.objects.filter(date__gt=today).select_related("recipe")[:5],
         "recent_lists": active_lists[:5],
@@ -66,6 +71,7 @@ def dashboard(request):
 def recipe_list(request):
     query = request.GET.get("q", "").strip()
     selected_tag = normalise_tag_name(request.GET.get("tag", ""))
+    selected_filter = request.GET.get("filter", "").strip()
     sort = request.GET.get("sort", "title")
     sort_options = {
         "title": "Title A-Z",
@@ -90,6 +96,15 @@ def recipe_list(request):
         ).distinct()
     if selected_tag:
         recipes = recipes.filter(tags__name__iexact=selected_tag).distinct()
+    if selected_filter == "favorites":
+        recipes = recipes.filter(favorite=True)
+    elif selected_filter == "missing_image":
+        recipes = recipes.filter(image="")
+    elif selected_filter == "never_cooked":
+        recipes = recipes.filter(last_cooked_at__isnull=True)
+    elif selected_filter == "pantry_friendly":
+        pantry_names = PantryItem.objects.filter(quantity__gt=0).values_list("ingredient__name", flat=True)
+        recipes = recipes.filter(ingredients__ingredient__name__in=pantry_names).distinct()
     recipes = recipes.order_by(*sort_ordering[sort])
     return render(
         request,
@@ -100,6 +115,13 @@ def recipe_list(request):
             "selected_tag": selected_tag,
             "sort": sort,
             "sort_options": sort_options,
+            "selected_filter": selected_filter,
+            "filter_options": {
+                "favorites": "Favorites",
+                "pantry_friendly": "Uses pantry stock",
+                "never_cooked": "Never cooked",
+                "missing_image": "Missing image",
+            },
             "tags": Tag.objects.annotate(recipe_count=Count("recipe")).filter(recipe_count__gt=0),
         },
     )
@@ -171,6 +193,9 @@ def recipe_edit(request, pk=None):
                 initial = {
                     "title": imported.get("title", ""),
                     "servings": imported.get("servings", 4),
+                    "prep_minutes": imported.get("prep_minutes"),
+                    "cook_minutes": imported.get("cook_minutes"),
+                    "source_url": imported.get("source_url", ""),
                     "tags_text": ", ".join(imported.get("tags_list", [])),
                 }
                 imported_image_path = valid_imported_image_path(imported.get("image_path", ""))
@@ -242,6 +267,8 @@ def recipe_import(request):
                 return render(request, "recipes/recipe_import.html")
                 
             request.session["imported_recipe"] = imported
+            if Recipe.objects.filter(title__iexact=imported.get("title", "")).exists():
+                messages.warning(request, "A recipe with this title already exists. Review it before saving a duplicate.")
             messages.success(request, "Recipe imported successfully! Please review and save it.")
             return redirect("recipe_create")
         except Exception as e:
@@ -276,7 +303,8 @@ def planner(request):
                 date=target_date,
                 meal_slot=entry.meal_slot,
                 recipe=entry.recipe,
-                servings=entry.servings
+                servings=entry.servings,
+                note=entry.note,
             )
             entries[f"{target_date.isoformat()}_{entry.meal_slot}"] = copied_entry
         messages.info(request, f"Previewing meals copied from week of {copy_from_start.strftime('%d %b %Y')}. Click 'Save planner' to keep them.")
@@ -321,8 +349,16 @@ def generate_shopping_list(request):
     if not plan_entries.exists():
         messages.error(request, "Plan at least one recipe before generating a shopping list.")
         return redirect(f"{reverse('planner')}?week={week_start.isoformat()}")
-    shopping_list = build_shopping_list(supermarket, week_start, plan_entries)
-    messages.success(request, "Shopping list generated.")
+    shopping_list = ShoppingList.objects.filter(
+        supermarket=supermarket,
+        week_start=week_start,
+    ).order_by("-created_at").first()
+    if shopping_list:
+        regenerate_shopping_list(shopping_list, plan_entries)
+        messages.success(request, "Latest shopping list refreshed.")
+    else:
+        shopping_list = build_shopping_list(supermarket, week_start, plan_entries)
+        messages.success(request, "Shopping list generated.")
     return redirect("shopping_list_detail", pk=shopping_list.pk)
 
 
@@ -443,6 +479,17 @@ def regenerate_existing_shopping_list(request, pk):
 
     regenerate_shopping_list(shopping_list, plan_entries)
     messages.success(request, "Shopping list regenerated.")
+    return redirect("shopping_list_detail", pk=pk)
+
+
+@require_POST
+def restock_shopping_list(request, pk):
+    shopping_list = get_object_or_404(ShoppingList, pk=pk)
+    restocked = restock_pantry_from_checked_items(shopping_list)
+    if restocked:
+        messages.success(request, f"Restocked pantry from {restocked} checked shopping item(s).")
+    else:
+        messages.error(request, "Check at least one shopping item before restocking pantry.")
     return redirect("shopping_list_detail", pk=pk)
 
 
@@ -599,14 +646,16 @@ def save_pantry_item_form(form, instance=None):
     ingredient, _ = Ingredient.objects.get_or_create(name=ingredient_name)
     quantity = form.cleaned_data["quantity"]
     unit = form.cleaned_data["unit"]
+    low_stock_threshold = form.cleaned_data.get("low_stock_threshold")
     note = form.cleaned_data["note"].strip()
     duplicate = PantryItem.objects.filter(ingredient=ingredient, unit=unit).exclude(
         pk=instance.pk if instance else None
     ).first()
     if duplicate:
         duplicate.quantity = Decimal(duplicate.quantity) + Decimal(quantity)
+        duplicate.low_stock_threshold = low_stock_threshold
         duplicate.note = note
-        duplicate.save(update_fields=["quantity", "note", "updated_at"])
+        duplicate.save(update_fields=["quantity", "low_stock_threshold", "note", "updated_at"])
         if instance and instance.pk:
             instance.delete()
         return duplicate
@@ -615,6 +664,7 @@ def save_pantry_item_form(form, instance=None):
     pantry_item.ingredient = ingredient
     pantry_item.quantity = quantity
     pantry_item.unit = unit
+    pantry_item.low_stock_threshold = low_stock_threshold
     pantry_item.note = note
     pantry_item.save()
     return pantry_item
@@ -631,6 +681,7 @@ def save_planner_entries(post_data, days):
                 existing = existing_entries.get((day, slot))
                 recipe_id = post_data.get(f"recipe_{day.isoformat()}_{slot}")
                 servings = parse_positive_int(post_data.get(f"servings_{day.isoformat()}_{slot}") or "1")
+                note = normalise_name(post_data.get(f"note_{day.isoformat()}_{slot}", ""))[:160]
 
                 if not recipe_id:
                     if existing:
@@ -639,13 +690,13 @@ def save_planner_entries(post_data, days):
                     continue
 
                 recipe = get_object_or_404(Recipe, pk=recipe_id)
-                if existing and existing.recipe_id == recipe.pk and existing.servings == servings:
+                if existing and existing.recipe_id == recipe.pk and existing.servings == servings and existing.note == note:
                     continue
 
                 if existing:
                     undo_meal_cooked(existing)
                     existing.delete()
-                MealPlanEntry.objects.create(date=day, meal_slot=slot, recipe=recipe, servings=servings)
+                MealPlanEntry.objects.create(date=day, meal_slot=slot, recipe=recipe, servings=servings, note=note)
 
 
 def parse_positive_int(value):

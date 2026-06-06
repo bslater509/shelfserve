@@ -69,6 +69,7 @@
               <div class="meal-cell-container" data-day="{{ day|date:'Y-m-d' }}" data-slot="{{ slot }}" data-slot-label="{{ label }}">
                 <input type="hidden" name="recipe_{{ day|date:'Y-m-d' }}_{{ slot }}" value="{% if entry %}{{ entry.recipe_id }}{% endif %}" class="recipe-id-input">
                 <input type="hidden" name="servings_{{ day|date:'Y-m-d' }}_{{ slot }}" value="{% if entry %}{{ entry.servings }}{% else %}1{% endif %}" class="recipe-servings-input">
+                <input type="hidden" name="note_{{ day|date:'Y-m-d' }}_{{ slot }}" value="{% if entry %}{{ entry.note }}{% endif %}" class="recipe-note-input">
                 
                 <!-- Empty State Block -->
                 <div class="meal-state-empty" {% if entry %}style="display: none;"{% endif %}>
@@ -108,6 +109,7 @@
                           {% endif %}
                         {% endif %}
                       </div>
+                      <input type="text" class="meal-note-field" value="{% if entry %}{{ entry.note }}{% endif %}" placeholder="Meal note" aria-label="Meal note">
                     </div>
                     <button type="button" class="btn-remove-meal-action" aria-label="Remove recipe from slot">&times;</button>
                   </div>
@@ -341,6 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Update hidden inputs
       activeCell.querySelector('.recipe-id-input').value = recipeId;
       activeCell.querySelector('.recipe-servings-input').value = servings;
+      activeCell.querySelector('.recipe-note-input').value = '';
 
       // Update UI components
       const filledState = activeCell.querySelector('.meal-state-filled');
@@ -349,6 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Update title
       filledState.querySelector('.meal-card-title').textContent = title;
       filledState.querySelector('.servings-count-display').textContent = servings;
+      filledState.querySelector('.meal-note-field').value = '';
 
       // Update image
       const thumbContainer = filledState.querySelector('.meal-card-thumb-container');
@@ -412,11 +416,19 @@ document.addEventListener('DOMContentLoaded', () => {
       e.stopPropagation();
       clearCell(cell);
     });
+
+    const noteField = cell.querySelector('.meal-note-field');
+    const noteInput = cell.querySelector('.recipe-note-input');
+    noteField.addEventListener('input', () => {
+      noteInput.value = noteField.value;
+    });
   });
 
   function clearCell(cell) {
     cell.querySelector('.recipe-id-input').value = '';
     cell.querySelector('.recipe-servings-input').value = '1';
+    cell.querySelector('.recipe-note-input').value = '';
+    cell.querySelector('.meal-note-field').value = '';
     cell.querySelector('.meal-state-filled').style.display = 'none';
     cell.querySelector('.meal-state-empty').style.display = 'block';
   }
@@ -474,12 +486,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Apply to cell
         cell.querySelector('.recipe-id-input').value = recipeId;
         cell.querySelector('.recipe-servings-input').value = servings;
+        cell.querySelector('.recipe-note-input').value = '';
 
         const filledState = cell.querySelector('.meal-state-filled');
         const emptyState = cell.querySelector('.meal-state-empty');
 
         filledState.querySelector('.meal-card-title').textContent = title;
         filledState.querySelector('.servings-count-display').textContent = servings;
+        filledState.querySelector('.meal-note-field').value = '';
 
         const thumbContainer = filledState.querySelector('.meal-card-thumb-container');
         thumbContainer.innerHTML = '';

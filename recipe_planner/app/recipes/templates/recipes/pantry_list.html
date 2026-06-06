@@ -30,6 +30,10 @@
         <label for="{{ form.note.id_for_label }}">Notes</label>
         {{ form.note }}
       </div>
+      <div class="form-group small">
+        <label for="{{ form.low_stock_threshold.id_for_label }}">Low stock</label>
+        {{ form.low_stock_threshold }}
+      </div>
     </div>
     <div class="custom-item-actions">
       <button class="button primary" type="submit">Add to pantry</button>
@@ -51,6 +55,12 @@
         <span class="amount">{{ item.quantity|quantity }} {{ item.unit }}</span>
         <span class="item-name">{{ item.ingredient.name }}</span>
         <div class="item-meta">
+          {% if item.low_stock_threshold is not None and item.quantity <= item.low_stock_threshold %}
+            <span class="custom-badge">Low stock</span>
+          {% endif %}
+          {% if item.low_stock_threshold is not None %}
+            <span class="muted">low at {{ item.low_stock_threshold|quantity }} {{ item.unit }}</span>
+          {% endif %}
           {% if item.note %}<span class="muted">{{ item.note }}</span>{% endif %}
         </div>
         <details class="shopping-item-edit">
@@ -77,6 +87,10 @@
               <div class="form-group notes">
                 <label for="pantry_note_{{ item.pk }}">Notes</label>
                 <input id="pantry_note_{{ item.pk }}" name="note" value="{{ item.note }}">
+              </div>
+              <div class="form-group small">
+                <label for="pantry_low_{{ item.pk }}">Low stock</label>
+                <input id="pantry_low_{{ item.pk }}" name="low_stock_threshold" type="number" min="0" step="0.01" value="{% if item.low_stock_threshold is not None %}{{ item.low_stock_threshold|quantity }}{% endif %}">
               </div>
             </div>
             <div class="shopping-item-actions">

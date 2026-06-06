@@ -17,6 +17,13 @@
         <input type="checkbox" id="chk-decimal-toggle">
         <span>Decimal Steps (0.5)</span>
       </label>
+      <p class="muted">
+        {% if recipe.favorite %}Favorite{% endif %}
+        {% if recipe.prep_minutes %}{% if recipe.favorite %} &middot; {% endif %}Prep {{ recipe.prep_minutes }} min{% endif %}
+        {% if recipe.cook_minutes %}{% if recipe.favorite or recipe.prep_minutes %} &middot; {% endif %}Cook {{ recipe.cook_minutes }} min{% endif %}
+        {% if recipe.last_cooked_at %}{% if recipe.favorite or recipe.prep_minutes or recipe.cook_minutes %} &middot; {% endif %}Last cooked {{ recipe.last_cooked_at|date:"j M Y" }}{% endif %}
+        {% if recipe.source_url %}{% if recipe.favorite or recipe.prep_minutes or recipe.cook_minutes or recipe.last_cooked_at %} &middot; {% endif %}<a href="{{ recipe.source_url }}" rel="noopener noreferrer" target="_blank">Source</a>{% endif %}
+      </p>
     </div>
   </div>
   <div class="toolbar-actions">

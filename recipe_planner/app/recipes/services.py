@@ -5,6 +5,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from .models import (
+    Ingredient,
     PantryAdjustment,
     PantryItem,
     ShoppingList,
@@ -98,6 +99,7 @@ def planned_shopping_items(supermarket, plan_entries, subtract_pantry=True):
         if payload["quantity"] <= 0:
             continue
         section = sections.get(section_key)
+        pantry_used_quantity = pantry_used.quantize(Decimal("0.01")) if pantry_used else Decimal("0")
         items.append(
             ShoppingListItem(
                 section_name=payload["section_name"],
@@ -105,6 +107,8 @@ def planned_shopping_items(supermarket, plan_entries, subtract_pantry=True):
                 ingredient_name=payload["ingredient_name"],
                 quantity=payload["quantity"].quantize(Decimal("0.01")),
                 unit=payload["unit"],
+                pantry_used_quantity=pantry_used_quantity,
+                pantry_used_unit=_base_unit if pantry_used else "",
                 notes=", ".join(sorted(payload["notes"])),
             )
         )
@@ -147,6 +151,8 @@ def mark_meal_cooked(entry):
 
         entry.pantry_consumed_at = timezone.now()
         entry.save(update_fields=["pantry_consumed_at"])
+        entry.recipe.last_cooked_at = entry.pantry_consumed_at
+        entry.recipe.save(update_fields=["last_cooked_at"])
         return entry
 
 
@@ -181,6 +187,29 @@ def build_shopping_list(supermarket, week_start, plan_entries):
 
     ShoppingListItem.objects.bulk_create(items)
     return shopping_list
+
+
+def restock_pantry_from_checked_items(shopping_list):
+    restocked = 0
+    with transaction.atomic():
+        items = ShoppingListItem.objects.select_for_update().filter(
+            shopping_list=shopping_list,
+            checked=True,
+        )
+        for item in items:
+            ingredient, _ = Ingredient.objects.get_or_create(name=normalise_name(item.ingredient_name))
+            if ingredient.category != item.section_name and item.section_name:
+                ingredient.category = item.section_name
+                ingredient.save(update_fields=["category"])
+            pantry_item, _ = PantryItem.objects.select_for_update().get_or_create(
+                ingredient=ingredient,
+                unit=item.unit,
+                defaults={"quantity": Decimal("0")},
+            )
+            pantry_item.quantity = Decimal(pantry_item.quantity) + Decimal(item.quantity)
+            pantry_item.save(update_fields=["quantity", "updated_at"])
+            restocked += 1
+    return restocked
 
 
 def regenerate_shopping_list(shopping_list, plan_entries):

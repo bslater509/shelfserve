@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.22
+
+- Refresh an existing supermarket/week shopping list instead of creating duplicate lists.
+- Show pantry coverage on generated shopping-list items and allow checked shopping items to restock pantry quantities.
+- Add low-stock thresholds for pantry items and surface low-stock pantry stock on the dashboard.
+- Add recipe source URL, prep time, cook time, favorite, and last-cooked metadata.
+- Improve recipe import metadata and raw-text title/serving detection.
+- Add recipe library filters for favorites, pantry-friendly recipes, never-cooked recipes, and recipes missing images.
+- Add optional notes to planned meal slots.
+
 ## 0.1.21
 
 - Add recipe library sorting by title, newest, recently updated, or servings.
