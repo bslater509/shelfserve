@@ -223,6 +223,7 @@ def parse_ingredient_rows(post_data):
     units = post_data.getlist("ingredient_unit")
     notes = post_data.getlist("ingredient_note")
     categories = post_data.getlist("ingredient_category")
+    group_names = post_data.getlist("ingredient_group")
 
     for index, raw_name in enumerate(names):
         name = normalise_name(raw_name)
@@ -244,6 +245,7 @@ def parse_ingredient_rows(post_data):
                 "unit": unit,
                 "note": notes[index].strip() if index < len(notes) else "",
                 "category": normalise_name(categories[index]) if index < len(categories) else "",
+                "group_name": normalise_name(group_names[index]) if index < len(group_names) else "",
                 "order": index,
             }
         )
@@ -273,6 +275,7 @@ def save_recipe_ingredients(recipe, rows):
             quantity=row["quantity"],
             unit=row["unit"],
             note=row["note"],
+            group_name=row.get("group_name", "")[:120],
             order=row["order"],
         )
 

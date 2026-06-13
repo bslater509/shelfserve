@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.31
+
+- Overhaul recipe import: richer URL scraping (ingredient groups, dietary/cuisine/cooking tags, total-time fallback, author prefix), improved raw text parser, per-request ingredient cache, ingredient normalization, source URL duplicate detection, loading spinner, inline error display, and specific exception handling.
+- Add `ImportForm` with URL format and non-empty validation.
+- Add `group_name` field to `RecipeIngredient` model, displayed in the recipe editor and detail pages, with cook mode group support.
+
 ## 0.1.30
 
 - Add searchable list of supported recipe websites to the import page, showing all 583 domains the built-in `recipe-scrapers` library supports.

@@ -1,6 +1,23 @@
+import re
+
 from django import forms
 
 from .models import AppSetting, MEAL_SLOTS, PantryItem, Recipe, Supermarket, Unit
+
+
+class ImportForm(forms.Form):
+    url = forms.URLField(required=False, label="Recipe URL")
+    raw_text = forms.CharField(required=False, widget=forms.Textarea, label="Raw recipe text")
+
+    def clean(self):
+        cleaned = super().clean()
+        url = cleaned.get("url", "").strip()
+        raw_text = cleaned.get("raw_text", "").strip()
+        if not url and not raw_text:
+            raise forms.ValidationError("Please provide either a URL or raw text.")
+        if url and not re.match(r"^https?://", url):
+            raise forms.ValidationError("Please enter a valid URL starting with http:// or https://.")
+        return cleaned
 
 
 class RecipeForm(forms.ModelForm):

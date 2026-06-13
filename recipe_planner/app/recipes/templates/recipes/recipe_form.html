@@ -41,7 +41,7 @@
     </div>
     <div class="ingredient-table" data-ingredient-rows>
       <div class="ingredient-row header">
-        <span>Ingredient</span><span>Qty</span><span>Unit</span><span>Section</span><span>Note</span><span>Actions</span>
+        <span>Ingredient</span><span>Qty</span><span>Unit</span><span>Section</span><span>Group</span><span>Note</span><span>Actions</span>
       </div>
       {% for item in ingredients %}
         <div class="ingredient-row">
@@ -53,6 +53,7 @@
             {% endfor %}
           </select>
           <input name="ingredient_category" value="{{ item.ingredient.category }}" placeholder="Aisle" list="ingredient-categories-datalist">
+          <input name="ingredient_group" value="{{ item.group_name }}" placeholder="Group" list="ingredient-groups-datalist">
           <input name="ingredient_note" value="{{ item.note }}" placeholder="Optional">
           <div class="step-actions">
             <button class="icon-button" type="button" data-move-up aria-label="Move row up">&uarr;</button>
@@ -70,6 +71,7 @@
             {% endfor %}
           </select>
           <input name="ingredient_category" placeholder="Aisle" list="ingredient-categories-datalist">
+          <input name="ingredient_group" placeholder="Group" list="ingredient-groups-datalist">
           <input name="ingredient_note" placeholder="Optional">
           <div class="step-actions">
             <button class="icon-button" type="button" data-move-up aria-label="Move row up">&uarr;</button>
@@ -130,6 +132,7 @@
       {% endfor %}
     </select>
     <input name="ingredient_category" placeholder="Aisle" list="ingredient-categories-datalist">
+    <input name="ingredient_group" placeholder="Group" list="ingredient-groups-datalist">
     <input name="ingredient_note" placeholder="Optional">
     <div class="step-actions">
       <button class="icon-button" type="button" data-move-up aria-label="Move row up">&uarr;</button>
@@ -160,6 +163,14 @@
 <datalist id="ingredient-categories-datalist">
   {% for suggested_category in suggested_categories %}
     <option value="{{ suggested_category }}">
+  {% endfor %}
+</datalist>
+
+<datalist id="ingredient-groups-datalist">
+  {% for item in ingredients %}
+    {% if item.group_name %}
+      <option value="{{ item.group_name }}">
+    {% endif %}
   {% endfor %}
 </datalist>
 

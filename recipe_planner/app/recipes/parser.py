@@ -9,23 +9,15 @@ from pathlib import Path
 from django.conf import settings
 from PIL import Image, UnidentifiedImageError
 from recipe_scrapers import get_supported_urls, scrape_me
+from recipe_scrapers._exceptions import WebsiteNotImplementedError
 
 from recipes.models import Ingredient, Unit
+from recipes.services import normalise_name
 
 
 logger = logging.getLogger(__name__)
 MAX_RECIPE_IMAGE_BYTES = 5 * 1024 * 1024
 
-# Cache for ingredient category lookups to avoid N+1 queries during batch parsing
-_ingredient_category_cache: dict[str, str] = {}
-
-
-def _ingredient_category(name):
-    """Get ingredient category with module-level cache to avoid repeated DB hits."""
-    if name not in _ingredient_category_cache:
-        existing = Ingredient.objects.filter(name__iexact=name).only("category").first()
-        _ingredient_category_cache[name] = existing.category if existing else ""
-    return _ingredient_category_cache[name]
 RECIPE_IMAGE_FORMATS = {
     "JPEG": "jpg",
     "PNG": "png",
@@ -167,10 +159,12 @@ def download_recipe_image(image_url):
 
 def parse_servings(yields):
     """Robustly parse servings/yields count into an integer."""
-    if not yields:
+    if yields is None:
         return 4
     if isinstance(yields, (int, float)):
         return max(1, int(yields))
+    if yields == "":
+        return 4
     match = re.search(r"\d+", str(yields))
     if match:
         return max(1, int(match.group()))
@@ -197,7 +191,26 @@ def scraper_minutes(scraper, method_name):
     return max(1, value) if value else None
 
 
-def parse_ingredient_line(line):
+def _load_ingredient_cache():
+    """Pre-load all existing ingredients into a dict keyed by normalised name."""
+    ingredients = Ingredient.objects.values("name", "category").all()
+    cache = {}
+    for entry in ingredients:
+        key = normalise_name(entry["name"]).lower()
+        if key not in cache:
+            cache[key] = entry["category"] or ""
+    return cache
+
+
+def _ingredient_category(name, cache):
+    """Look up ingredient category from pre-loaded cache by normalised name."""
+    if not name:
+        return ""
+    key = normalise_name(name).lower()
+    return cache.get(key, "")
+
+
+def parse_ingredient_line(line, ingredient_cache=None):
     """Parse a single ingredient string into structured fields."""
     line = line.strip()
     if not line:
@@ -270,8 +283,6 @@ def parse_ingredient_line(line):
             unit = UNIT_MAPPING[first_word_clean]
             name = " ".join(words[1:])
         elif "/" in first_word:
-            # Handle patterns like "450g/1lb Italian sausages" where the first
-            # word contains a metric/imperial alternative separated by "/".
             slash_prefix = first_word.split("/")[0]
             if slash_prefix in UNIT_MAPPING:
                 unit = UNIT_MAPPING[slash_prefix]
@@ -295,7 +306,10 @@ def parse_ingredient_line(line):
         if name.lower().startswith("of "):
             name = name[3:].strip()
 
-    category = _ingredient_category(name) if name else ""
+    if ingredient_cache is not None:
+        category = _ingredient_category(name, ingredient_cache)
+    else:
+        category = _ingredient_category(name, _load_ingredient_cache())
 
     quantity = quantity.quantize(Decimal("0.01"))
 
@@ -305,6 +319,7 @@ def parse_ingredient_line(line):
         "unit": unit,
         "note": note,
         "category": category,
+        "group_name": "",
     }
 
 
@@ -341,6 +356,29 @@ def get_supported_websites():
     return _supported_websites
 
 
+def _scraper_tag_list(scraper, *method_names):
+    """Collect string tags from multiple scraper methods, return deduplicated list."""
+    tags = set()
+    for name in method_names:
+        method = getattr(scraper, name, None)
+        if not method:
+            continue
+        try:
+            value = method()
+        except (NotImplementedError, Exception):
+            continue
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, str) and item.strip():
+                    tags.add(item.lower().strip())
+        elif isinstance(value, str):
+            for part in value.split(","):
+                part = part.strip().lower()
+                if part:
+                    tags.add(part)
+    return sorted(tags)
+
+
 def parse_recipe_url(url):
     """Scrape a recipe URL using recipe-scrapers."""
     scraper = scrape_me(url)
@@ -361,6 +399,12 @@ def parse_recipe_url(url):
     else:
         raw_steps = [step.strip() for step in str(instructions or "").splitlines() if step.strip()]
 
+    if not raw_steps:
+        try:
+            raw_steps = scraper.instructions_list()
+        except Exception:
+            pass
+
     steps = []
     for step in raw_steps:
         steps.append(
@@ -370,11 +414,27 @@ def parse_recipe_url(url):
             }
         )
 
+    ingredient_cache = _load_ingredient_cache()
     ingredients = []
-    for line in scraper.ingredients():
-        parsed = parse_ingredient_line(line)
-        if parsed:
-            ingredients.append(parsed)
+    try:
+        groups = scraper.ingredient_groups()
+    except Exception:
+        groups = None
+
+    if groups:
+        for group in groups:
+            group_purpose = group.purpose.strip() if group.purpose else ""
+            for line in group.ingredients:
+                parsed = parse_ingredient_line(line, ingredient_cache)
+                if parsed:
+                    if group_purpose:
+                        parsed["group_name"] = group_purpose
+                    ingredients.append(parsed)
+    else:
+        for line in scraper.ingredients():
+            parsed = parse_ingredient_line(line, ingredient_cache)
+            if parsed:
+                ingredients.append(parsed)
 
     tags = []
     keywords = scraper.keywords()
@@ -387,19 +447,53 @@ def parse_recipe_url(url):
     if isinstance(category, str):
         tags.extend([tag.strip() for tag in category.split(",") if tag.strip()])
 
+    extra_tags = _scraper_tag_list(
+        scraper, "dietary_restrictions", "cuisine", "cooking_method"
+    )
+    tags.extend(extra_tags)
+
     clean_tags = sorted({tag.lower().strip() for tag in tags if tag.strip()})[:5]
+
+    prep_minutes = scraper_minutes(scraper, "prep_time")
+    cook_minutes = scraper_minutes(scraper, "cook_time")
+    if prep_minutes is None and cook_minutes is None:
+        total = scraper_minutes(scraper, "total_time")
+        if total is not None:
+            prep_minutes = total
+
+    source_url = url
+    try:
+        author = scraper.author()
+        if author and isinstance(author, str) and author.strip():
+            source_url = f"By {author.strip()} - {url}"
+    except Exception:
+        pass
 
     return {
         "title": title,
         "servings": servings,
-        "prep_minutes": scraper_minutes(scraper, "prep_time"),
-        "cook_minutes": scraper_minutes(scraper, "cook_time"),
+        "prep_minutes": prep_minutes,
+        "cook_minutes": cook_minutes,
         "steps": steps,
         "ingredients": ingredients,
         "tags_list": clean_tags,
-        "source_url": url,
+        "source_url": source_url,
         "image_path": download_recipe_image(scraper.image()),
     }
+
+
+TEXT_SECTION_HEADERS = {
+    "ingredients", "ingredient", "ingredients list", "ingredient list",
+    "shopping list",
+    "instructions", "instruction", "directions", "direction",
+    "steps", "step", "method", "preparation",
+    "assembly", "to serve", "garnish",
+    "marinade", "marinate", "sauce", "for the sauce",
+    "for the marinade", "for the dressing", "for the filling",
+    "for the dough", "for the crust", "for the topping",
+}
+
+TEXT_NOTE_HEADERS = {"note", "notes", "tip", "tips", "chef's tip", "chefs tip", "chef tip"}
 
 
 def parse_recipe_text(text):
@@ -413,27 +507,15 @@ def parse_recipe_text(text):
     state = 1
     content_lines = [line for line in lines if line]
     first_content_line = content_lines[0] if content_lines else ""
-    possible_headings = {
-        "ingredients",
-        "ingredient",
-        "ingredients list",
-        "ingredient list",
-        "shopping list",
-        "instructions",
-        "instruction",
-        "directions",
-        "direction",
-        "steps",
-        "step",
-        "method",
-        "preparation",
-    }
     skip_title_line = False
     if first_content_line:
         first_clean = re.sub(r"[^\w\s]", "", first_content_line.lower()).strip()
-        if first_clean not in possible_headings and not re.match(r"^\d", first_content_line):
+        first_is_for = re.match(r"^for\s+the\s+", first_clean)
+        if first_clean not in TEXT_SECTION_HEADERS and not first_is_for and not re.match(r"^\d", first_content_line):
             title = first_content_line
             skip_title_line = True
+
+    ingredient_cache = _load_ingredient_cache()
 
     for line in lines:
         if not line:
@@ -444,23 +526,40 @@ def parse_recipe_text(text):
 
         line_lower = line.lower()
         line_clean = re.sub(r"[^\w\s]", "", line_lower).strip()
-        servings_match = re.search(r"\b(?:serves|servings|yield|yields)\s*:?\s*(\d+)\b", line_lower)
+
+        servings_match = re.search(
+            r"\b(?:serves|servings|yield|yields|makes?)\s*:?\s*(\d+)\b",
+            line_lower,
+        )
         if servings_match:
             servings = max(1, int(servings_match.group(1)))
             continue
-        if line_clean in ["ingredients", "ingredient", "ingredients list", "ingredient list", "shopping list"]:
+
+        if line_clean in TEXT_NOTE_HEADERS:
+            state = 3
+            continue
+
+        if line_clean in TEXT_SECTION_HEADERS:
+            if "ingredient" in line_clean or "shopping" in line_clean:
+                state = 1
+            else:
+                state = 2
+            continue
+
+        if re.match(r"^for\s+the\s+", line_clean) and state != 2:
             state = 1
             continue
-        if line_clean in ["instructions", "instruction", "directions", "direction", "steps", "step", "method", "preparation"]:
-            state = 2
+
+        if state == 3:
             continue
 
         if state == 1:
-            parsed = parse_ingredient_line(line)
+            parsed = parse_ingredient_line(line, ingredient_cache)
             if parsed:
                 ingredients.append(parsed)
         elif state == 2:
-            steps_list.append(line)
+            clean = re.sub(r"^\d+[\.\)]\s*", "", line).strip()
+            steps_list.append(clean if clean else line)
 
     steps = []
     for line in steps_list:

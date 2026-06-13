@@ -121,6 +121,7 @@ class RecipeIngredient(models.Model):
     quantity = models.DecimalField(max_digits=9, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
     unit = models.CharField(max_length=8, choices=Unit.choices)
     note = models.CharField(max_length=160, blank=True)
+    group_name = models.CharField(max_length=120, blank=True)
     order = models.PositiveIntegerField(default=0)
 
     class Meta:

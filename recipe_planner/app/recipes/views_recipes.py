@@ -1,8 +1,12 @@
+import logging
+
 from django.contrib import messages
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 
-from .forms import RecipeForm
+from recipe_scrapers._exceptions import WebsiteNotImplementedError
+
+from .forms import ImportForm, RecipeForm
 from .models import Ingredient, PantryItem, Recipe, Tag, Unit
 from .services import normalise_tag_name
 from .parser import get_supported_websites, parse_recipe_text, parse_recipe_url
@@ -15,6 +19,9 @@ from .view_helpers import (
     save_recipe_tags,
     valid_imported_image_path,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def recipe_list(request):
@@ -115,6 +122,7 @@ def recipe_edit(request, pk=None):
                 "quantity": row["quantity"],
                 "unit": row["unit"],
                 "note": row["note"],
+                "group_name": row.get("group_name", ""),
             })
             
         # Re-populate steps list with POST data for rendering if validation fails
@@ -156,6 +164,7 @@ def recipe_edit(request, pk=None):
                         "quantity": ing.get("quantity", "1.00"),
                         "unit": ing.get("unit", "item"),
                         "note": ing.get("note", ""),
+                        "group_name": ing.get("group_name", ""),
                     })
                 for step in imported.get("steps", []):
                     if isinstance(step, dict):
@@ -199,31 +208,59 @@ def recipe_edit(request, pk=None):
     )
 
 def recipe_import(request):
+    form = ImportForm(request.POST if request.method == "POST" else None)
+    error_message = None
+
     if request.method == "POST":
-        url = request.POST.get("url", "").strip()
-        raw_text = request.POST.get("raw_text", "").strip()
-        
-        try:
-            if url:
-                from . import views as public_views
-
-                imported = public_views.parse_recipe_url(url)
-            elif raw_text:
-                from . import views as public_views
-
-                imported = public_views.parse_recipe_text(raw_text)
-            else:
-                messages.error(request, "Please provide either a URL or raw text.")
-                return render(request, "recipes/recipe_import.html")
-                
-            request.session["imported_recipe"] = imported
-            if Recipe.objects.filter(title__iexact=imported.get("title", "")).exists():
-                messages.warning(request, "A recipe with this title already exists. Review it before saving a duplicate.")
-            messages.success(request, "Recipe imported successfully! Please review and save it.")
-            return redirect("recipe_create")
-        except Exception as e:
-            messages.error(request, f"Error importing recipe: {str(e)}")
+        if not form.is_valid():
+            for field_errors in form.errors.values():
+                for err in field_errors:
+                    error_message = str(err)
+                    break
+                if error_message:
+                    break
+        else:
+            url = form.cleaned_data.get("url", "").strip()
+            raw_text = form.cleaned_data.get("raw_text", "").strip()
             
+            try:
+                if url:
+                    imported = parse_recipe_url(url)
+                else:
+                    imported = parse_recipe_text(raw_text)
+
+                request.session["imported_recipe"] = imported
+
+                existing = None
+                title = imported.get("title", "")
+                source_url = imported.get("source_url", "")
+                if title and Recipe.objects.filter(title__iexact=title).exists():
+                    existing = Recipe.objects.filter(title__iexact=title).first()
+                if not existing and source_url:
+                    source_clean = source_url.split(" - ", 1)[-1] if " - " in source_url else source_url
+                    existing = Recipe.objects.filter(source_url__iexact=source_clean).first()
+
+                if existing:
+                    msg = 'A recipe with the title "%s" already exists. <a href="%s">View existing recipe &rarr;</a>'
+                    messages.warning(request, msg % (existing.title, existing.get_absolute_url()))
+                else:
+                    messages.success(request, "Recipe imported successfully! Please review and save it.")
+                return redirect("recipe_create")
+            except WebsiteNotImplementedError:
+                error_message = "This website is not yet supported for automatic recipe importing."
+                logger.warning("Unsupported website attempted: %s", url)
+            except (ConnectionError, TimeoutError):
+                error_message = "Could not connect to the website. Please check the URL and try again."
+                logger.warning("Connection/timeout error importing URL: %s", url)
+            except ValueError as e:
+                error_message = str(e)
+                logger.warning("Value error during import: %s", e)
+            except Exception as e:
+                error_message = "Something went wrong during import. Please check the URL and try again."
+                logger.exception("Unexpected error importing recipe: %s", e)
+
     return render(request, "recipes/recipe_import.html", {
+        "form": form,
+        "error_message": error_message,
         "supported_websites": get_supported_websites(),
     })

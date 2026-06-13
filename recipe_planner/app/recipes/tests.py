@@ -30,6 +30,16 @@ from .models import (
     Tag,
     Unit,
 )
+from .parser import (
+    parse_ingredient_line,
+    parse_recipe_text,
+    parse_recipe_url,
+    parse_servings,
+    scraper_minutes,
+    extract_step_duration,
+    get_supported_websites,
+    download_recipe_image,
+)
 from .services import build_shopping_list, unit_bucket
 from .view_helpers import start_of_week
 
@@ -1120,7 +1130,7 @@ class RecipePlannerTests(TestCase):
             "tags_list": ["easy"],
             "image_path": "recipes/imported_mock.jpg"
         }
-        with patch("recipes.views.parse_recipe_text", return_value=mock_data) as mock_parse:
+        with patch("recipes.views_recipes.parse_recipe_text", return_value=mock_data) as mock_parse:
             response = self.client.post(
                 reverse("recipe_import"),
                 {"raw_text": "2 large eggs\nCrack and fry."}
@@ -1562,3 +1572,600 @@ class RecipePlannerTests(TestCase):
             response = self.client.get(reverse("recipe_detail", args=[recipe.pk]))
 
         self.assertEqual(response.status_code, 200)
+
+
+class MockScraper:
+    """Simulates a recipe-scrapers scraper object with configurable return values."""
+
+    def __init__(self, **overrides):
+        self._title = overrides.get("title", "Test Recipe")
+        self._yields = overrides.get("yields", 4)
+        self._instructions = overrides.get("instructions", ["Step one", "Step two"])
+        self._ingredients = overrides.get("ingredients", ["200g spaghetti", "2 tbsp olive oil"])
+        self._keywords = overrides.get("keywords", ["easy", "pasta"])
+        self._category = overrides.get("category", "Dinner")
+        self._image = overrides.get("image", "https://example.com/recipe.jpg")
+
+    def title(self):
+        return self._title
+    def yields(self):
+        return self._yields
+    def instructions(self):
+        return self._instructions
+    def ingredients(self):
+        return self._ingredients
+    def keywords(self):
+        return self._keywords
+    def category(self):
+        return self._category
+    def image(self):
+        return self._image
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class RecipeParseRecipeUrlTests(TestCase):
+    """Tests for parse_recipe_url with mocked scrapers."""
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(django_settings.MEDIA_ROOT, ignore_errors=True)
+
+    def test_instructions_list_of_strings(self):
+        """Instructions as a list of strings is the most common scraper output."""
+        scraper = MockScraper(
+            instructions=["Boil water.", "Add pasta.", "Cook for 10 minutes."],
+        )
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/pasta")
+        self.assertEqual(len(result["steps"]), 3)
+        self.assertEqual(result["steps"][0]["text"], "Boil water.")
+        self.assertEqual(result["steps"][1]["text"], "Add pasta.")
+        self.assertEqual(result["steps"][2]["duration_minutes"], 10)
+
+    def test_instructions_list_of_dicts(self):
+        """Some scrapers return instructions as a list of dicts with 'text' key."""
+        scraper = MockScraper(
+            instructions=[
+                {"text": "Preheat oven to 180C."},
+                {"text": "Bake for 30 minutes."},
+            ],
+        )
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/bake")
+        self.assertEqual(len(result["steps"]), 2)
+        self.assertEqual(result["steps"][0]["text"], "Preheat oven to 180C.")
+        self.assertEqual(result["steps"][1]["duration_minutes"], 30)
+
+    def test_instructions_single_multiline_string(self):
+        """Fallback: instructions returned as a single string with newlines."""
+        scraper = MockScraper(
+            instructions="Mix dry ingredients.\nAdd wet ingredients.\nBake.",
+        )
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/cake")
+        self.assertEqual(len(result["steps"]), 3)
+        self.assertEqual(result["steps"][0]["text"], "Mix dry ingredients.")
+
+    def test_instructions_empty_string(self):
+        """Empty instructions string produces no steps."""
+        scraper = MockScraper(instructions="")
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/empty")
+        self.assertEqual(result["steps"], [])
+
+    def test_instructions_none(self):
+        """None instructions produces no steps."""
+        scraper = MockScraper(instructions=None)
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/none")
+        self.assertEqual(result["steps"], [])
+
+    def test_yields_none_defaults_to_four(self):
+        """When yields is None, servings should default to 4."""
+        scraper = MockScraper(yields=None)
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/soup")
+        self.assertEqual(result["servings"], 4)
+
+    def test_yields_zero_string_defaults_to_one(self):
+        """When yields is '0', servings should be 1 (minimum)."""
+        scraper = MockScraper(yields="0")
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/soup")
+        self.assertEqual(result["servings"], 1)
+
+    def test_keywords_none_yields_only_category_tag(self):
+        """When keywords is None, only the category tag is included."""
+        scraper = MockScraper(keywords=None, category="Dinner")
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/soup")
+        self.assertEqual(result["tags_list"], ["dinner"])
+
+    def test_keywords_as_comma_string(self):
+        """Some scrapers return keywords as a comma-separated string."""
+        scraper = MockScraper(keywords="easy, quick, pasta", category=None)
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/soup")
+        self.assertEqual(result["tags_list"], ["easy", "pasta", "quick"])
+
+    def test_keywords_empty_list_without_category(self):
+        """Empty list of keywords and no category produces no tags."""
+        scraper = MockScraper(keywords=[], category=None)
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/soup")
+        self.assertEqual(result["tags_list"], [])
+
+    def test_category_as_string_adds_to_tags(self):
+        """Category string should be included in tags_list."""
+        scraper = MockScraper(category="Main course")
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/main")
+        self.assertIn("main course", result["tags_list"])
+
+    def test_category_none(self):
+        """None category should not crash and not add to tags."""
+        scraper = MockScraper(category=None)
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/main")
+        self.assertEqual(result["tags_list"], ["easy", "pasta"])
+
+    def test_tags_limited_to_five(self):
+        """tags_list should be capped at 5 sorted unique tags."""
+        scraper = MockScraper(
+            keywords=["a", "b", "c", "d", "e", "f", "g"],
+        )
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/tags")
+        self.assertEqual(len(result["tags_list"]), 5)
+
+    def test_image_none_still_succeeds(self):
+        """When image() returns None, the parser should still succeed."""
+        scraper = MockScraper(image=None)
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/noimage")
+        self.assertEqual(result["image_path"], "")
+
+    def test_source_url_preserved_in_result(self):
+        """The source_url in the result should match the input URL."""
+        scraper = MockScraper()
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/my-recipe")
+        self.assertEqual(result["source_url"], "https://example.com/my-recipe")
+
+    def test_ingredients_parsed_into_structured_format(self):
+        """Ingredient lines should be parsed into structured dicts."""
+        scraper = MockScraper(
+            ingredients=["1 cup flour", "2 tbsp butter, melted", "3 eggs"],
+        )
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/bake")
+        self.assertEqual(len(result["ingredients"]), 3)
+        self.assertEqual(result["ingredients"][0]["name"], "flour")
+        self.assertEqual(result["ingredients"][0]["note"], "cup")
+        self.assertEqual(result["ingredients"][1]["name"], "butter")
+        self.assertEqual(result["ingredients"][1]["note"], "melted")
+
+    def test_instructions_list_with_empty_dicts(self):
+        """List of dicts where some have empty text should skip those."""
+        scraper = MockScraper(
+            instructions=[
+                {"text": ""},
+                {"text": "Real step here."},
+            ],
+        )
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/step")
+        self.assertEqual(len(result["steps"]), 1)
+        self.assertEqual(result["steps"][0]["text"], "Real step here.")
+
+    def test_instructions_list_with_non_dict_items(self):
+        """List of mixed types: non-dict items are converted to string."""
+        scraper = MockScraper(
+            instructions=["Step one", {"text": "Step two"}],
+        )
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/mixed")
+        self.assertEqual(len(result["steps"]), 2)
+        self.assertEqual(result["steps"][0]["text"], "Step one")
+        self.assertEqual(result["steps"][1]["text"], "Step two")
+
+    def test_ingredients_empty_list(self):
+        """Empty ingredients list produces no ingredients."""
+        scraper = MockScraper(ingredients=[])
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/empty")
+        self.assertEqual(result["ingredients"], [])
+
+    def test_keywords_removes_duplicates_and_sorts(self):
+        """Duplicate keywords across keywords() and category() should be deduplicated."""
+        scraper = MockScraper(
+            keywords=["dinner", "quick", "quick"],
+            category="Dinner",
+        )
+        with patch("recipes.parser.scrape_me", return_value=scraper):
+            result = parse_recipe_url("https://example.com/dupes")
+        self.assertEqual(result["tags_list"], ["dinner", "quick"])
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class RecipeScraperMinutesTests(TestCase):
+    """Tests for scraper_minutes helper."""
+
+    class MockScraper:
+        pass
+
+    def test_method_missing(self):
+        """When the method does not exist on scraper, return None."""
+        scraper = self.MockScraper()
+        result = scraper_minutes(scraper, "nonexistent_method")
+        self.assertIsNone(result)
+
+    def test_returns_none(self):
+        """When method returns None, return None."""
+        scraper = self.MockScraper()
+        scraper.prep_time = lambda: None
+        result = scraper_minutes(scraper, "prep_time")
+        self.assertIsNone(result)
+
+    def test_returns_empty_string(self):
+        """When method returns empty string, return None."""
+        scraper = self.MockScraper()
+        scraper.prep_time = lambda: ""
+        result = scraper_minutes(scraper, "prep_time")
+        self.assertIsNone(result)
+
+    def test_returns_non_numeric_string(self):
+        """When method returns non-numeric string, extract digits."""
+        scraper = self.MockScraper()
+        scraper.prep_time = lambda: "about 30 minutes"
+        result = scraper_minutes(scraper, "prep_time")
+        self.assertEqual(result, 30)
+
+    def test_returns_valid_int(self):
+        """When method returns valid int, return it."""
+        scraper = self.MockScraper()
+        scraper.prep_time = lambda: 30
+        result = scraper_minutes(scraper, "prep_time")
+        self.assertEqual(result, 30)
+
+    def test_returns_valid_string_number(self):
+        """When method returns string number, return int."""
+        scraper = self.MockScraper()
+        scraper.prep_time = lambda: "45"
+        result = scraper_minutes(scraper, "prep_time")
+        self.assertEqual(result, 45)
+
+    def test_returns_zero(self):
+        """When method returns 0, return None."""
+        scraper = self.MockScraper()
+        scraper.prep_time = lambda: 0
+        result = scraper_minutes(scraper, "prep_time")
+        self.assertIsNone(result)
+
+    def test_returns_negative(self):
+        """When method returns negative, clamp to 1."""
+        scraper = self.MockScraper()
+        scraper.prep_time = lambda: -5
+        result = scraper_minutes(scraper, "prep_time")
+        self.assertEqual(result, 1)
+
+    def test_method_raises_exception(self):
+        """When method raises exception, return None."""
+        scraper = self.MockScraper()
+        def raise_error():
+            raise ValueError("scraper error")
+        scraper.prep_time = raise_error
+        result = scraper_minutes(scraper, "prep_time")
+        self.assertIsNone(result)
+
+    def test_returns_string_with_no_digits(self):
+        """When method returns string with no digits, return None."""
+        scraper = self.MockScraper()
+        scraper.prep_time = lambda: "unknown"
+        result = scraper_minutes(scraper, "prep_time")
+        self.assertIsNone(result)
+
+
+class RecipeParseServingsTests(TestCase):
+    """Tests for parse_servings helper."""
+
+    def test_none(self):
+        """None input defaults to 4."""
+        self.assertEqual(parse_servings(None), 4)
+
+    def test_valid_int(self):
+        """Int input is returned as-is."""
+        self.assertEqual(parse_servings(4), 4)
+
+    def test_float(self):
+        """Float input is truncated to int."""
+        self.assertEqual(parse_servings(4.5), 4)
+
+    def test_string_with_number(self):
+        """String with number extracts the first number."""
+        self.assertEqual(parse_servings("Serves 4-6"), 4)
+
+    def test_string_no_number(self):
+        """String with no number defaults to 4."""
+        self.assertEqual(parse_servings("unknown"), 4)
+
+    def test_zero(self):
+        """Zero input clamps to 1."""
+        self.assertEqual(parse_servings(0), 1)
+
+    def test_negative(self):
+        """Negative input clamps to 1."""
+        self.assertEqual(parse_servings(-3), 1)
+
+    def test_string_zero(self):
+        """String '0' clamps to 1."""
+        self.assertEqual(parse_servings("0"), 1)
+
+    def test_empty_string(self):
+        """Empty string defaults to 4."""
+        self.assertEqual(parse_servings(""), 4)
+
+    def test_large_number(self):
+        """Large number is preserved."""
+        self.assertEqual(parse_servings(100), 100)
+
+
+class RecipeExtractStepDurationTests(TestCase):
+    """Tests for extract_step_duration helper."""
+
+    def test_minutes_only(self):
+        """'Bake for 45 minutes' returns 45."""
+        self.assertEqual(extract_step_duration("Bake for 45 minutes at 180C"), 45)
+
+    def test_hours_only(self):
+        """'Simmer for 1 hour' returns 60."""
+        self.assertEqual(extract_step_duration("Simmer for 1 hour"), 60)
+
+    def test_hours_and_minutes(self):
+        """'Boil for 1 hr and 15 mins' returns 75."""
+        self.assertEqual(extract_step_duration("Boil for 1 hr and 15 mins"), 75)
+
+    def test_hr_abbreviation(self):
+        """'Cook for 2 hrs' returns 120."""
+        self.assertEqual(extract_step_duration("Cook for 2 hrs"), 120)
+
+    def test_min_abbreviation(self):
+        """'Rest for 10 min' returns 10."""
+        self.assertEqual(extract_step_duration("Rest for 10 min"), 10)
+
+    def test_no_time_mention(self):
+        """No time mention returns None."""
+        self.assertIsNone(extract_step_duration("Mix ingredients together"))
+
+    def test_empty_string(self):
+        """Empty string returns None."""
+        self.assertIsNone(extract_step_duration(""))
+
+    def test_none_input(self):
+        """None input returns None."""
+        self.assertIsNone(extract_step_duration(None))
+
+    def test_hours_then_minutes_without_conjunction(self):
+        """'3 hours 20 minutes' returns 200."""
+        self.assertEqual(extract_step_duration("Rise for 3 hours 20 minutes"), 200)
+
+    def test_time_in_middle_of_sentence(self):
+        """Time mention in middle of sentence is still detected."""
+        self.assertEqual(
+            extract_step_duration("First, simmer for 30 minutes, then add salt."),
+            30,
+        )
+
+    def test_hour_minutes_plural(self):
+        """'2 hours and 30 minutes' returns 150."""
+        self.assertEqual(extract_step_duration("Steam for 2 hours and 30 minutes"), 150)
+
+
+class RecipeParseIngredientLineEdgeCases(TestCase):
+    """Edge cases for parse_ingredient_line."""
+
+    def test_empty_line(self):
+        """Empty line returns None."""
+        self.assertIsNone(parse_ingredient_line(""))
+
+    def test_whitespace_line(self):
+        """Whitespace-only line returns None."""
+        self.assertIsNone(parse_ingredient_line("   "))
+
+    def test_default_quantity(self):
+        """Ingredient with no quantity defaults to 1.0."""
+        res = parse_ingredient_line("onion")
+        self.assertEqual(res["name"], "onion")
+        self.assertEqual(res["quantity"], "1.00")
+        self.assertEqual(res["unit"], Unit.ITEM)
+
+    def test_mixed_fraction_with_hyphen(self):
+        """Mixed fraction like '1 1/2 cups sugar' works."""
+        res = parse_ingredient_line("1 1/2 cups sugar")
+        self.assertEqual(res["name"], "sugar")
+        self.assertEqual(res["quantity"], "1.50")
+        self.assertEqual(res["note"], "cup")
+
+    def test_of_prefix_after_unit(self):
+        """'1 cup of flour' strips 'of' prefix from name."""
+        res = parse_ingredient_line("1 cup of flour")
+        self.assertEqual(res["name"], "flour")
+        self.assertEqual(res["note"], "cup")
+
+    def test_x_prefix(self):
+        """'1 x 2 litre carton milk' strips 'x' prefix from name."""
+        res = parse_ingredient_line("1 x 2 litre carton milk")
+        # The 'x' should be consumed but '2' doesn't match unit mapping
+        # so whole thing becomes name
+        self.assertEqual(res["unit"], Unit.ITEM)
+        self.assertEqual(res["quantity"], "1.00")
+
+    def test_dash_prefix(self):
+        """'-' prefix after quantity is stripped."""
+        res = parse_ingredient_line("1 - onion")
+        self.assertEqual(res["name"], "onion")
+        self.assertEqual(res["quantity"], "1.00")
+
+    def test_comma_note(self):
+        """Text after comma becomes note."""
+        res = parse_ingredient_line("2 tbsp butter, melted")
+        self.assertEqual(res["name"], "butter")
+        self.assertEqual(res["note"], "melted")
+
+    def test_paren_and_comma_note(self):
+        """Both parenthetical and comma notes combine."""
+        res = parse_ingredient_line("2 tbsp butter (unsalted), melted")
+        self.assertEqual(res["name"], "butter")
+        self.assertEqual(res["note"], "unsalted, melted")
+
+    def test_non_standard_unit_in_parens(self):
+        """Non-standard unit like 'canned' does not match 'can' mapping because it's the full word 'canned'."""
+        res = parse_ingredient_line("400g canned tomatoes")
+        self.assertEqual(res["unit"], Unit.GRAM)
+        self.assertEqual(res["quantity"], "400.00")
+        self.assertEqual(res["name"], "canned tomatoes")
+
+    def test_item_unit_default(self):
+        """Plain ingredient with no unit defaults to ITEM."""
+        res = parse_ingredient_line("3 eggs")
+        self.assertEqual(res["name"], "eggs")
+        self.assertEqual(res["quantity"], "3.00")
+        self.assertEqual(res["unit"], Unit.ITEM)
+
+    def test_unit_mapping_with_period(self):
+        """Unit abbreviations with periods like 'tsp.' are recognized."""
+        res = parse_ingredient_line("1 tsp. salt")
+        self.assertEqual(res["name"], "salt")
+        self.assertEqual(res["unit"], Unit.TEASPOON)
+
+    def test_unit_mapping_with_trailing_period(self):
+        """Unit abbreviations with trailing period are cleaned."""
+        res = parse_ingredient_line("1 tbsp. olive oil")
+        self.assertEqual(res["name"], "olive oil")
+        self.assertEqual(res["unit"], Unit.TABLESPOON)
+
+    def test_slash_metric_imperial(self):
+        """Metric/imperial alternative like '450g/1lb' is parsed."""
+        res = parse_ingredient_line("450g/1lb Italian sausages")
+        self.assertEqual(res["name"], "Italian sausages")
+        self.assertEqual(res["quantity"], "450.00")
+        self.assertEqual(res["unit"], Unit.GRAM)
+
+    def test_non_standard_unit_slash(self):
+        """Non-standard unit with slash like '1 cup/250ml' handles cup as note."""
+        res = parse_ingredient_line("1 cup/250ml water")
+        self.assertEqual(res["name"], "water")
+        self.assertEqual(res["quantity"], "1.00")
+        self.assertEqual(res["note"], "cup")
+
+    def test_very_long_name(self):
+        """Long ingredient names are preserved."""
+        res = parse_ingredient_line("1 tbsp freshly squeezed lemon juice")
+        self.assertEqual(res["name"], "freshly squeezed lemon juice")
+        self.assertEqual(res["unit"], Unit.TABLESPOON)
+
+    def test_decimal_quantity(self):
+        """Decimal quantities are parsed correctly."""
+        res = parse_ingredient_line("0.5 kg chicken")
+        self.assertEqual(res["name"], "chicken")
+        self.assertEqual(res["quantity"], "0.50")
+        self.assertEqual(res["unit"], Unit.KILOGRAM)
+
+    def test_unicode_fraction_alone(self):
+        """Unicode fraction alone is parsed."""
+        res = parse_ingredient_line("\u00bd lemon")
+        self.assertEqual(res["name"], "lemon")
+        self.assertEqual(res["quantity"], "0.50")
+
+    def test_mixed_unicode_fraction(self):
+        """Mixed number with unicode fraction is parsed."""
+        res = parse_ingredient_line("1\u00bd cups milk")
+        self.assertEqual(res["name"], "milk")
+        self.assertEqual(res["quantity"], "1.50")
+        self.assertEqual(res["note"], "cup")
+
+
+class RecipeParserViewIntegrationTests(TestCase):
+    """Integration tests for the recipe import view's error handling."""
+
+    def test_import_view_invalid_url_returns_error_message(self):
+        """When scrape_me raises, the view should show an error message."""
+        with patch("recipes.views_recipes.parse_recipe_url", side_effect=ValueError("Invalid recipe URL")):
+            response = self.client.post(
+                reverse("recipe_import"),
+                {"url": "https://invalid.com/recipe"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Invalid recipe URL")
+
+    def test_import_view_http_error_shows_message(self):
+        """HTTP errors from scraping are shown as user-facing messages."""
+        with patch("recipes.views_recipes.parse_recipe_url", side_effect=ConnectionError("Connection refused")):
+            response = self.client.post(
+                reverse("recipe_import"),
+                {"url": "https://down.site/recipe"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Could not connect to the website")
+
+    def test_import_view_complex_exception_shows_message(self):
+        """Any exception during import shows the message."""
+        with patch("recipes.views_recipes.parse_recipe_url", side_effect=RuntimeError("Unexpected scraper crash")):
+            response = self.client.post(
+                reverse("recipe_import"),
+                {"url": "https://example.com/crash"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Something went wrong during import")
+
+    def test_import_view_missing_url_and_text(self):
+        """When both URL and text are empty, show an error."""
+        response = self.client.post(
+            reverse("recipe_import"),
+            {"url": "", "raw_text": ""},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "provide either a URL or raw text")
+
+    def test_import_duplicate_title_warning(self):
+        """Importing a recipe with a title that matches an existing recipe shows a warning."""
+        Recipe.objects.create(title="Existing Recipe", servings=2)
+        mock_data = {
+            "title": "Existing Recipe",
+            "servings": 4,
+            "steps": [{"text": "Step 1", "duration_minutes": None}],
+            "ingredients": [{"name": "flour", "quantity": "1.00", "unit": "item", "note": "", "category": ""}],
+            "tags_list": [],
+            "image_path": "",
+        }
+        with patch("recipes.views_recipes.parse_recipe_text", return_value=mock_data):
+            response = self.client.post(
+                reverse("recipe_import"),
+                {"raw_text": "Existing Recipe\nIngredients\n1 cup flour\nInstructions\nStep 1"},
+            )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], reverse("recipe_create"))
+        response2 = self.client.get(response["Location"])
+        self.assertContains(response2, "already exists")
+
+    def test_get_supported_websites_returns_list(self):
+        """get_supported_websites returns a sorted list of domains."""
+        sites = get_supported_websites()
+        self.assertIsInstance(sites, list)
+        self.assertGreater(len(sites), 0)
+        self.assertEqual(sites, sorted(sites))
+
+    def test_get_supported_websites_cached(self):
+        """get_supported_websites caches and returns the same list."""
+        sites1 = get_supported_websites()
+        sites2 = get_supported_websites()
+        self.assertIs(sites1, sites2)
+
+    def test_parse_recipe_text_empty_string(self):
+        """Empty text parsing should return defaults."""
+        result = parse_recipe_text("")
+        self.assertEqual(result["title"], "Imported Recipe")
+        self.assertEqual(result["servings"], 4)
+        self.assertEqual(result["ingredients"], [])
+        self.assertEqual(result["steps"], [])
