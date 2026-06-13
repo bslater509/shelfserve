@@ -1,6 +1,6 @@
 """Compatibility import surface for recipe view callables."""
 
-from .parser import parse_recipe_text, parse_recipe_url
+from .parser import get_supported_websites, parse_recipe_text, parse_recipe_url
 from .views_dashboard import dashboard
 from .views_pantry import delete_pantry_item, edit_pantry_item, pantry_list
 from .views_planner import (
@@ -25,6 +25,7 @@ from .views_supermarkets import settings_view, supermarket_detail, supermarket_l
 __all__ = [
     "add_shopping_item",
     "cook_planner_entry",
+    "get_supported_websites",
     "dashboard",
     "delete_meal_plan_template",
     "delete_pantry_item",

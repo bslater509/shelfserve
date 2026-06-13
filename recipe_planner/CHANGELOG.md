@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.30
+
+- Add searchable list of supported recipe websites to the import page, showing all 583 domains the built-in `recipe-scrapers` library supports.
+
 ## 0.1.29
 
 - Add per-slot meal type toggle in Settings to enable or disable breakfast, lunch, or dinner slots globally. Disabled slots are hidden from the planner page and dashboard; existing entries are preserved and reappear if the slot is re-enabled.

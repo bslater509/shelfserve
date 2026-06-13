@@ -8,7 +8,7 @@ from pathlib import Path
 
 from django.conf import settings
 from PIL import Image, UnidentifiedImageError
-from recipe_scrapers import scrape_me
+from recipe_scrapers import get_supported_urls, scrape_me
 
 from recipes.models import Ingredient, Unit
 
@@ -329,6 +329,16 @@ def extract_step_duration(text):
         return int(min_match.group(1))
 
     return None
+
+
+_supported_websites = None
+
+
+def get_supported_websites():
+    global _supported_websites
+    if _supported_websites is None:
+        _supported_websites = sorted(get_supported_urls())
+    return _supported_websites
 
 
 def parse_recipe_url(url):

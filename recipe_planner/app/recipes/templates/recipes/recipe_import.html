@@ -1,5 +1,75 @@
 {% extends "recipes/base.html" %}
 {% block title %}Import Recipe - ShelfServe{% endblock %}
+{% block extra_css %}
+<style>
+.supported-sites {
+  margin-top: 16px;
+}
+.supported-sites summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .95rem;
+}
+.supported-sites summary::-webkit-details-marker {
+  display: none;
+}
+.supported-sites summary::marker {
+  display: none;
+  content: "";
+}
+.supported-sites summary::before {
+  content: "\25B6";
+  font-size: .75rem;
+  color: var(--muted);
+  transition: transform .15s;
+}
+.supported-sites[open] summary::before {
+  transform: rotate(90deg);
+}
+.site-search-input {
+  margin-top: 12px;
+  max-width: 420px;
+}
+.tag-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--primary);
+  font-size: .8rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.site-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+  max-height: 440px;
+  overflow-y: auto;
+}
+.site-tag {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 10px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: .85rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.site-tag:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+</style>
+{% endblock %}
 {% block content %}
 <section class="toolbar">
   <div>
@@ -40,4 +110,35 @@
     </form>
   </section>
 </div>
+
+<details class="panel supported-sites" id="supported-sites">
+  <summary>
+    <strong>Supported recipe websites</strong>
+    <span class="tag-count">{{ supported_websites|length }}</span>
+  </summary>
+  <input type="search" id="site-search" placeholder="Search websites..." class="site-search-input">
+  <div id="site-list" class="site-list">
+    {% for site in supported_websites %}
+      <a href="https://{{ site }}" target="_blank" rel="noopener" class="site-tag">{{ site }}</a>
+    {% endfor %}
+  </div>
+</details>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  const search = document.getElementById('site-search');
+  if (!search) return;
+  const list = document.getElementById('site-list');
+  if (!list) return;
+  const tags = Array.from(list.getElementsByClassName('site-tag'));
+  search.addEventListener('input', function() {
+    const q = this.value.toLowerCase().trim();
+    for (const tag of tags) {
+      tag.classList.toggle('hidden', !tag.textContent.toLowerCase().includes(q));
+    }
+  });
+})();
+</script>
 {% endblock %}

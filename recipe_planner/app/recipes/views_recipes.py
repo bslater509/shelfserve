@@ -5,7 +5,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from .forms import RecipeForm
 from .models import Ingredient, PantryItem, Recipe, Tag, Unit
 from .services import normalise_tag_name
-from .parser import parse_recipe_text, parse_recipe_url
+from .parser import get_supported_websites, parse_recipe_text, parse_recipe_url
 from .view_helpers import (
     imported_image_media_url,
     parse_ingredient_rows,
@@ -224,4 +224,6 @@ def recipe_import(request):
         except Exception as e:
             messages.error(request, f"Error importing recipe: {str(e)}")
             
-    return render(request, "recipes/recipe_import.html")
+    return render(request, "recipes/recipe_import.html", {
+        "supported_websites": get_supported_websites(),
+    })
