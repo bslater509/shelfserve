@@ -22,6 +22,7 @@ map:
     read_only: false
 options:
   log_level: info
+  server_port: 8099
 schema:
   log_level: list(trace|debug|info|notice|warning|error|fatal)?
   server_port: port?
