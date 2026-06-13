@@ -1,8 +1,12 @@
 # Changelog
 
+## 0.1.33
+
+- Fix port mapping: use `ports` instead of `network` in config.yaml so Home Assistant correctly exposes the port on the host network.
+
 ## 0.1.32
 
-- Share ShelfServe over the local network via a configurable network port in the add-on Network configuration UI.
+- Share ShelfServe over the local network via a configurable port in the add-on Configuration > Network tab.
 - Add optional `server_port` setting to change the port the app listens on.
 
 ## 0.1.31
