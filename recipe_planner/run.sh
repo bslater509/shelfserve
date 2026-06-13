@@ -53,6 +53,23 @@ case "${LOG_LEVEL}" in
     ;;
 esac
 
+# Read server_port from options
+SERVER_PORT="$(python3 - "${SHELFSERVE_PORT}" <<'PY'
+import json
+import sys
+default = sys.argv[1]
+try:
+    with open("/data/options.json", encoding="utf-8") as f:
+        value = json.load(f).get("server_port", default)
+except Exception:
+    value = default
+if value is None:
+    value = default
+print(value)
+PY
+)"
+export SHELFSERVE_PORT="${SERVER_PORT}"
+
 mkdir -p "${SHELFSERVE_DATA_DIR}/media" "${SHELFSERVE_DATA_DIR}/static"
 
 cd /opt/shelfserve/app

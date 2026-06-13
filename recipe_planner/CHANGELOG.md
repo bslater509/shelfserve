@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.32
+
+- Share ShelfServe over the local network via a configurable network port in the add-on Network configuration UI.
+- Add optional `server_port` setting to change the port the app listens on.
+
 ## 0.1.31
 
 - Overhaul recipe import: richer URL scraping (ingredient groups, dietary/cuisine/cooking tags, total-time fallback, author prefix), improved raw text parser, per-request ingredient cache, ingredient normalization, source URL duplicate detection, loading spinner, inline error display, and specific exception handling.
