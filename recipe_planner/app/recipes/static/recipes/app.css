@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
   --ink: #202124;
   --muted: #65717c;
   --line: #d9dee3;
@@ -10,6 +10,21 @@
   --accent: #b24c32;
   --soft: #edf4f1;
   --warn: #fff2d8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e3e3e3;
+    --muted: #9aa0a6;
+    --line: #3c4043;
+    --page: #121212;
+    --panel: #1e1e1e;
+    --primary: #4ade80;
+    --primary-ink: #ffffff;
+    --accent: #ff6b4a;
+    --soft: #282828;
+    --warn: #3d3020;
+  }
 }
 
 * {
@@ -38,7 +53,7 @@ a {
   justify-content: space-between;
   gap: 16px;
   padding: 12px 20px;
-  background: #ffffff;
+  background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
 
@@ -58,7 +73,7 @@ a {
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 8px 12px;
-  background: #ffffff;
+  background: var(--panel);
   color: var(--ink);
   text-decoration: none;
   font: inherit;
@@ -152,7 +167,7 @@ small {
 
 .stat {
   border-left: 4px solid var(--accent);
-  background: #ffffff;
+  background: var(--panel);
   padding: 16px;
 }
 
@@ -263,7 +278,7 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 9px 10px;
-  background: #ffffff;
+  background: var(--panel);
   color: var(--ink);
   font: inherit;
   font-weight: 400;
@@ -332,7 +347,7 @@ textarea {
   place-items: center;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #ffffff;
+  background: var(--panel);
   color: var(--ink);
   cursor: pointer;
   height: 42px;
@@ -617,7 +632,7 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 6px 10px;
-  background: #ffffff;
+  background: var(--panel);
   color: var(--muted);
   font-size: .9rem;
   font-weight: 700;

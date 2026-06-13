@@ -1043,6 +1043,34 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(res3["note"], "skinless")
         self.assertEqual(res3["category"], "Meat")
 
+    def test_parse_ingredient_line_alt_units(self):
+        """Alternative metric/imperial patterns like '450g/1lb' are handled."""
+        from .parser import parse_ingredient_line
+
+        # BBC-style metric/imperial alternative
+        res = parse_ingredient_line("450g/1lb Italian sausages")
+        self.assertEqual(res["name"], "Italian sausages")
+        self.assertEqual(res["quantity"], "450.00")
+        self.assertEqual(res["unit"], Unit.GRAM)
+        self.assertEqual(res["note"], "")
+
+        res = parse_ingredient_line("225g/8oz cheddar cheese")
+        self.assertEqual(res["name"], "cheddar cheese")
+        self.assertEqual(res["quantity"], "225.00")
+        self.assertEqual(res["unit"], Unit.GRAM)
+
+        # Slash in non-standard-unit contexts should still work
+        res = parse_ingredient_line("1 cup/250ml water")
+        self.assertEqual(res["name"], "water")
+        self.assertEqual(res["quantity"], "1.00")
+        self.assertEqual(res["note"], "cup")
+
+        # No regression: standard unit without slash
+        res = parse_ingredient_line("500.50g chicken breast (skinless)")
+        self.assertEqual(res["name"], "chicken breast")
+        self.assertEqual(res["unit"], Unit.GRAM)
+        self.assertEqual(res["quantity"], "500.50")
+
     def test_parse_recipe_text(self):
         from .parser import parse_recipe_text
         raw_text = (

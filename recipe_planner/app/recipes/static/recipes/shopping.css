@@ -77,7 +77,7 @@
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 6px 10px;
-  background: #ffffff;
+  background: var(--panel);
   color: var(--primary);
   font-size: .9rem;
   font-weight: 700;

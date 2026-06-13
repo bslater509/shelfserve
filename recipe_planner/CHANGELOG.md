@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.28
+
+- Fix recipe ingredient import parsing for BBC Food metric/imperial alternatives (e.g. `450g/1lb Italian sausages` now correctly extracts 450g).
+
+## 0.1.27
+
+- The main ShelfServe UI now respects your system's dark mode preference (`prefers-color-scheme: dark`). The topbar, cards, panels, buttons, form fields, modals, planner grid, and shopping lists all adapt with theme-appropriate colors and contrast.
+- Dark-mode page background (#121212), card panels (#1e1e1e), and softer border colors (#3c4043) work across Dashboard, Recipes, Pantry, Planner, Supermarkets, and Shopping lists.
+- The cook mode overlay retains its independent dark/light toggle — system dark mode does not lock it to dark.
+
 ## 0.1.26
 
 - Fix ingredient category preservation on restock: existing categories are no longer overwritten by the shopping-list section name.

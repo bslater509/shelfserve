@@ -121,7 +121,7 @@
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 4px 10px;
-  background: #ffffff;
+  background: var(--panel);
   font-size: 0.85rem;
   cursor: pointer;
 }
@@ -159,7 +159,7 @@
 }
 
 .servings-stepper .stepper-btn {
-  background: #ffffff;
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 6px;
   width: 28px;

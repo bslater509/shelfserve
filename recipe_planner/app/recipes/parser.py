@@ -269,6 +269,18 @@ def parse_ingredient_line(line):
         elif first_word_clean in UNIT_MAPPING:
             unit = UNIT_MAPPING[first_word_clean]
             name = " ".join(words[1:])
+        elif "/" in first_word:
+            # Handle patterns like "450g/1lb Italian sausages" where the first
+            # word contains a metric/imperial alternative separated by "/".
+            slash_prefix = first_word.split("/")[0]
+            if slash_prefix in UNIT_MAPPING:
+                unit = UNIT_MAPPING[slash_prefix]
+                name = " ".join(words[1:])
+            elif slash_prefix in NON_STANDARD_UNITS:
+                unit = Unit.ITEM
+                non_std = NON_STANDARD_UNITS[slash_prefix]
+                name = " ".join(words[1:])
+                note = f"{non_std}, {note}" if note else non_std
         elif first_word in NON_STANDARD_UNITS:
             unit = Unit.ITEM
             non_std = NON_STANDARD_UNITS[first_word]
