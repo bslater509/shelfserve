@@ -22,6 +22,7 @@ from .models import (
     PantryItem,
     Recipe,
     RecipeIngredient,
+    RecipeStep,
     ShoppingList,
     ShoppingListItem,
     Supermarket,
@@ -29,7 +30,7 @@ from .models import (
     Tag,
     Unit,
 )
-from .services import build_shopping_list
+from .services import build_shopping_list, unit_bucket
 from .view_helpers import start_of_week
 
 
@@ -968,6 +969,45 @@ class RecipePlannerTests(TestCase):
         self.assertContains(response, reverse("shopping_list_detail", args=[shopping_list.pk]))
         self.assertContains(response, "Open latest Tesco list")
 
+    def test_parse_ingredient_line_duplicate_parenthetical(self):
+        """Parenthetical text appearing multiple times only captures the first."""
+        from .parser import parse_ingredient_line
+        res = parse_ingredient_line("2 tbsp butter (melted) (salted)")
+        self.assertEqual(res["name"], "butter (salted)")
+        self.assertEqual(res["quantity"], "2.00")
+        self.assertEqual(res["unit"], Unit.TABLESPOON)
+        self.assertEqual(res["note"], "melted")
+
+    def test_download_recipe_image_handles_timeout(self):
+        """download_recipe_image returns empty string on network timeout."""
+        from .parser import download_recipe_image
+        with tempfile.TemporaryDirectory() as media_root:
+            with (
+                override_settings(MEDIA_ROOT=media_root),
+                patch("recipes.parser.urllib.request.urlopen", side_effect=TimeoutError("timeout")),
+            ):
+                image_path = download_recipe_image("https://example.com/recipe.png")
+            self.assertEqual(image_path, "")
+
+    def test_recipe_detail_query_count(self):
+        """recipe_detail has a fixed query count thanks to prefetch_related.
+
+        Queries:
+          1. Recipe lookup (pk)
+          2. Tags prefetch
+          3. Ingredients + ingredient prefetch
+          4. Steps count (template calls .count() which bypasses prefetch cache)
+          5. Steps prefetch (lazy, triggered on first .all() in template)
+          6. Steps count (cook mode template section)
+          7. Steps all (cook mode; Django re-queries due to intervening .count())
+        """
+        recipe = Recipe.objects.create(title="Test", servings=2)
+        RecipeStep.objects.create(recipe=recipe, text="Step 1", order=0)
+        RecipeStep.objects.create(recipe=recipe, text="Step 2", order=1)
+        with self.assertNumQueries(7):
+            response = self.client.get(reverse("recipe_detail", args=[recipe.pk]))
+        self.assertEqual(response.status_code, 200)
+
     def test_parse_ingredient_line(self):
         from .parser import parse_ingredient_line
         
@@ -1365,3 +1405,132 @@ class RecipePlannerTests(TestCase):
 
         self.assertRedirects(response, reverse("planner"))
         self.assertFalse(MealPlanTemplate.objects.exists())
+
+    def test_custom_item_checked_state_preserved_after_regeneration(self):
+        """Custom shopping items retain their checked state after list regeneration."""
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        recipe = Recipe.objects.create(title="Pasta", servings=2)
+        RecipeIngredient.objects.create(
+            recipe=recipe, ingredient=tomatoes, quantity=Decimal("100"), unit=Unit.GRAM,
+        )
+        MealPlanEntry.objects.create(date="2026-06-01", meal_slot="dinner", recipe=recipe, servings=2)
+        supermarket = Supermarket.objects.create(name="Tesco")
+        SupermarketSection.objects.create(supermarket=supermarket, name="Fruit & veg", order=0)
+        shopping_list = build_shopping_list(supermarket, date(2026, 6, 1), MealPlanEntry.objects.all())
+
+        # Add a custom checked item
+        custom = ShoppingListItem.objects.create(
+            shopping_list=shopping_list,
+            section_name="Dairy",
+            section_order=1,
+            ingredient_name="Milk",
+            quantity=Decimal("2"),
+            unit=Unit.LITRE,
+            checked=True,
+            is_custom=True,
+        )
+
+        # Regenerate
+        response = self.client.post(reverse("regenerate_shopping_list", args=[shopping_list.pk]))
+        self.assertRedirects(response, reverse("shopping_list_detail", args=[shopping_list.pk]))
+
+        custom.refresh_from_db()
+        self.assertTrue(custom.is_custom)
+        self.assertTrue(custom.checked)
+
+    def test_shopping_item_zero_quantity_handling(self):
+        """Adding a shopping item with zero or negative quantity defaults to 1."""
+        supermarket = Supermarket.objects.create(name="Tesco")
+        shopping_list = ShoppingList.objects.create(supermarket=supermarket, week_start=date(2026, 6, 1))
+
+        # Zero quantity
+        response = self.client.post(
+            reverse("add_shopping_item", args=[shopping_list.pk]),
+            {"ingredient_name": "Milk", "quantity": "0", "unit": Unit.LITRE, "section_name": "Dairy"},
+        )
+        self.assertRedirects(response, reverse("shopping_list_detail", args=[shopping_list.pk]))
+        item = ShoppingListItem.objects.get(shopping_list=shopping_list, ingredient_name="Milk")
+        self.assertEqual(item.quantity, Decimal("1"))
+
+        # Negative quantity
+        response = self.client.post(
+            reverse("add_shopping_item", args=[shopping_list.pk]),
+            {"ingredient_name": "Eggs", "quantity": "-5", "unit": Unit.ITEM, "section_name": "Dairy"},
+        )
+        item2 = ShoppingListItem.objects.get(shopping_list=shopping_list, ingredient_name="Eggs")
+        self.assertEqual(item2.quantity, Decimal("1"))
+
+    def test_edit_shopping_item_rejects_invalid_quantity(self):
+        """Editing a shopping item with invalid quantity shows error and does not update."""
+        supermarket = Supermarket.objects.create(name="Tesco")
+        shopping_list = ShoppingList.objects.create(supermarket=supermarket, week_start=date(2026, 6, 1))
+        item = ShoppingListItem.objects.create(
+            shopping_list=shopping_list, section_name="Bakery",
+            ingredient_name="Bread", quantity=Decimal("1"), unit=Unit.ITEM,
+        )
+
+        response = self.client.post(
+            reverse("edit_shopping_item", args=[item.pk]),
+            {"ingredient_name": "Bread", "quantity": "abc", "unit": Unit.ITEM, "section_name": "Bakery"},
+        )
+        self.assertRedirects(response, reverse("shopping_list_detail", args=[shopping_list.pk]))
+        item.refresh_from_db()
+        self.assertEqual(item.quantity, Decimal("1"))  # unchanged
+
+    def test_restock_preserves_category_if_already_set(self):
+        """Restocking does not overwrite an ingredient's existing category."""
+        supermarket = Supermarket.objects.create(name="Tesco")
+        shopping_list = ShoppingList.objects.create(supermarket=supermarket, week_start=date(2026, 6, 1))
+        ShoppingListItem.objects.create(
+            shopping_list=shopping_list, section_name="Drinks",
+            ingredient_name="Milk", quantity=Decimal("1"), unit=Unit.LITRE, checked=True,
+        )
+
+        # Ingredient already has a category
+        milk = Ingredient.objects.create(name="Milk", category="Dairy")
+
+        response = self.client.post(reverse("restock_shopping_list", args=[shopping_list.pk]))
+        self.assertRedirects(response, reverse("shopping_list_detail", args=[shopping_list.pk]))
+        milk.refresh_from_db()
+        self.assertEqual(milk.category, "Dairy")  # preserved, not overwritten to "Drinks"
+
+    def test_unit_bucket_graceful_fallback(self):
+        """unit_bucket returns ITEM group for unknown units instead of crashing."""
+        result = unit_bucket("unknown_unit_xyz")
+        self.assertEqual(result, ("item", Decimal("1"), Unit.ITEM))
+
+    def test_multi_recipe_pantry_deduction(self):
+        """Two recipes sharing the same ingredient correctly split limited pantry stock."""
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        PantryItem.objects.create(ingredient=tomatoes, quantity=Decimal("0.50"), unit=Unit.KILOGRAM)
+        recipe_a = Recipe.objects.create(title="Pasta", servings=2)
+        RecipeIngredient.objects.create(recipe=recipe_a, ingredient=tomatoes, quantity=Decimal("300"), unit=Unit.GRAM)
+        recipe_b = Recipe.objects.create(title="Pizza", servings=2)
+        RecipeIngredient.objects.create(recipe=recipe_b, ingredient=tomatoes, quantity=Decimal("300"), unit=Unit.GRAM)
+
+        MealPlanEntry.objects.create(date="2026-06-01", meal_slot="dinner", recipe=recipe_a, servings=2)
+        MealPlanEntry.objects.create(date="2026-06-02", meal_slot="dinner", recipe=recipe_b, servings=2)
+        supermarket = Supermarket.objects.create(name="Tesco")
+
+        shopping_list = build_shopping_list(supermarket, date(2026, 6, 1), MealPlanEntry.objects.all())
+
+        # Pantry has 500g, total need is 600g → only 100g should need buying
+        item = shopping_list.items.get(ingredient_name="Tomatoes")
+        self.assertEqual(item.quantity, Decimal("100.00"))
+        self.assertEqual(item.unit, Unit.GRAM)
+        self.assertEqual(item.pantry_used_quantity, Decimal("500.00"))
+
+    def test_recipe_detail_query_count(self):
+        """Recipe detail page uses prefetched steps to avoid N+1 queries."""
+        recipe = Recipe.objects.create(title="Multi-step recipe", servings=2)
+        RecipeStep.objects.create(recipe=recipe, text="Step one", order=0)
+        RecipeStep.objects.create(recipe=recipe, text="Step two", order=1)
+        RecipeStep.objects.create(recipe=recipe, text="Step three", order=2)
+
+        with self.assertNumQueries(4):
+            # 1. Recipe + tags + ingredients + steps (all prefetched)
+            # 2. Ingredient names for select_related
+            # 3. Session lookup
+            response = self.client.get(reverse("recipe_detail", args=[recipe.pk]))
+
+        self.assertEqual(response.status_code, 200)

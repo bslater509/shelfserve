@@ -1,0 +1,17 @@
+services:
+  shelfserve:
+    build:
+      context: .
+    container_name: shelfserve-dev
+    ports:
+      - "127.0.0.1:8099:8099"
+    environment:
+      SHELFSERVE_SECRET_KEY: development-only-change-me
+      SHELFSERVE_DEBUG: "1"
+      SHELFSERVE_LOG_LEVEL: debug
+    volumes:
+      - shelfserve-dev-data:/data
+      - ./app:/opt/shelfserve/app
+
+volumes:
+  shelfserve-dev-data:

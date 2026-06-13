@@ -36,7 +36,11 @@ def scale_quantity(quantity, planned_servings, recipe_servings):
 
 
 def unit_bucket(unit):
-    group, multiplier, base_unit = UNIT_GROUPS[Unit(unit)]
+    try:
+        unit_enum = Unit(unit)
+    except (ValueError, KeyError):
+        unit_enum = Unit.ITEM
+    group, multiplier, base_unit = UNIT_GROUPS[unit_enum]
     return group, multiplier, base_unit
 
 
@@ -162,6 +166,9 @@ def undo_meal_cooked(entry):
         if not entry.pantry_consumed_at:
             return entry
 
+        # Note: recipe.last_cooked_at is intentionally NOT restored here because
+        # we cannot know the previous value (it may have been set by a different meal)
+
         for adjustment in entry.pantry_adjustments.select_related("pantry_item", "ingredient"):
             pantry_item = adjustment.pantry_item
             if pantry_item is None:
@@ -198,7 +205,7 @@ def restock_pantry_from_checked_items(shopping_list):
         )
         for item in items:
             ingredient, _ = Ingredient.objects.get_or_create(name=normalise_name(item.ingredient_name))
-            if ingredient.category != item.section_name and item.section_name:
+            if not ingredient.category and item.section_name:
                 ingredient.category = item.section_name
                 ingredient.save(update_fields=["category"])
             pantry_item, _ = PantryItem.objects.select_for_update().get_or_create(

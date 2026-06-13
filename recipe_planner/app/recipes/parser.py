@@ -15,6 +15,17 @@ from recipes.models import Ingredient, Unit
 
 logger = logging.getLogger(__name__)
 MAX_RECIPE_IMAGE_BYTES = 5 * 1024 * 1024
+
+# Cache for ingredient category lookups to avoid N+1 queries during batch parsing
+_ingredient_category_cache: dict[str, str] = {}
+
+
+def _ingredient_category(name):
+    """Get ingredient category with module-level cache to avoid repeated DB hits."""
+    if name not in _ingredient_category_cache:
+        existing = Ingredient.objects.filter(name__iexact=name).only("category").first()
+        _ingredient_category_cache[name] = existing.category if existing else ""
+    return _ingredient_category_cache[name]
 RECIPE_IMAGE_FORMATS = {
     "JPEG": "jpg",
     "PNG": "png",
@@ -272,11 +283,7 @@ def parse_ingredient_line(line):
         if name.lower().startswith("of "):
             name = name[3:].strip()
 
-    category = ""
-    if name:
-        existing = Ingredient.objects.filter(name__iexact=name).first()
-        if existing:
-            category = existing.category
+    category = _ingredient_category(name) if name else ""
 
     quantity = quantity.quantize(Decimal("0.01"))
 

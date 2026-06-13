@@ -6,8 +6,11 @@ from .models import (
     MealPlanEntry,
     MealPlanTemplate,
     MealPlanTemplateEntry,
+    PantryAdjustment,
+    PantryItem,
     Recipe,
     RecipeIngredient,
+    RecipeStep,
     ShoppingList,
     ShoppingListItem,
     Supermarket,
@@ -36,5 +39,8 @@ admin.site.register(SupermarketSection)
 admin.site.register(MealPlanEntry)
 admin.site.register(MealPlanTemplate)
 admin.site.register(MealPlanTemplateEntry)
+admin.site.register(PantryItem)
+admin.site.register(PantryAdjustment)
+admin.site.register(RecipeStep)
 admin.site.register(ShoppingList)
 admin.site.register(ShoppingListItem)

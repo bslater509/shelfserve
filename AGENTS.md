@@ -65,9 +65,33 @@ python manage.py makemigrations --check --dry-run
 
 ## Local Docker Development
 
-ShelfServe can run as a local Docker container for development without Home Assistant. Build from the add-on directory so the same Dockerfile, dependencies, and `run.sh` startup path are used. 
+ShelfServe can run as a local Docker container for development without Home Assistant. Build from the add-on directory so the same Dockerfile, dependencies, and `run.sh` startup path are used.
 
-To start or recreate the container:
+### Docker Compose (recommended)
+
+Use `docker-compose.yml` at `recipe_planner/docker-compose.yml`:
+
+```bash
+docker compose -f recipe_planner/docker-compose.yml up --build -d
+```
+
+This builds the image, starts the container (`shelfserve-dev`), mounts the app code at `./app` for live changes, and exposes the app at `http://127.0.0.1:8099/`.
+
+To stop:
+
+```bash
+docker compose -f recipe_planner/docker-compose.yml down
+```
+
+After code changes, restart the container to pick up the bind-mounted changes without a full rebuild:
+
+```bash
+docker compose -f recipe_planner/docker-compose.yml restart
+```
+
+### Manual docker commands
+
+To start or recreate the container manually:
 
 ```powershell
 docker stop shelfserve-dev

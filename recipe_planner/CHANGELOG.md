@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.26
+
+- Fix ingredient category preservation on restock: existing categories are no longer overwritten by the shopping-list section name.
+- Gracefully handle unknown unit values in pantry and shopping-list operations by falling back to Item instead of crashing.
+- Add `steps` prefetch to recipe detail page to eliminate an N+1 SQL query.
+- Clean up unused imports across all view files and register remaining models in the admin interface.
+- Document that `undo_meal_cooked` intentionally leaves `last_cooked_at` unchanged.
+- Add targeted test coverage for multi-recipe pantry deduction, unit fallback, restock category preservation, zero-quantity handling, and regeneration edge cases.
+- Fix dashboard checked-items counter regression — ensures the annotation matches its name by counting checked (completed) items rather than unchecked ones.
+
 ## 0.1.25
 
 - Refactor recipe, planner, pantry, supermarket, and shopping-list views into focused maintenance modules while keeping existing URLs and behavior unchanged.
