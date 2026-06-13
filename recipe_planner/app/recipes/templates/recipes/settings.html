@@ -11,6 +11,22 @@
 <form method="post" class="panel form-panel">
   {% csrf_token %}
   <label>Week starts on {{ form.week_start }}</label>
+
+  <fieldset style="border: none; padding: 0; margin: 0;">
+    <legend style="font-weight: 650; margin-bottom: 8px;">Meal slots</legend>
+    <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+      {% for checkbox in form.enabled_slots %}
+        <label class="toggle-row" style="display: inline-flex; align-items: center; gap: 8px; font-weight: 650;">
+          {{ checkbox.tag }}
+          {{ checkbox.choice_label }}
+        </label>
+      {% endfor %}
+    </div>
+    <p class="muted font-outfit" style="margin: 6px 0 0 0; font-size: 0.85rem;">
+      Uncheck a slot to hide it from the planner and dashboard. Existing entries are preserved.
+    </p>
+  </fieldset>
+
   <button class="button primary" type="submit">Save settings</button>
 </form>
 {% endblock %}

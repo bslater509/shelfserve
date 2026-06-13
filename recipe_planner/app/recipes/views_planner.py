@@ -5,7 +5,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from .models import AppSetting, MEAL_SLOTS, MealPlanEntry, MealPlanTemplate, Recipe, ShoppingList, Supermarket
+from .models import AppSetting, MealPlanEntry, MealPlanTemplate, Recipe, ShoppingList, Supermarket
 from .services import mark_meal_cooked, normalise_name, undo_meal_cooked
 from .view_helpers import (
     entries_from_template,
@@ -37,7 +37,7 @@ def planner(request):
             saved_template = save_meal_plan_template(template_name, request.POST, days)
             messages.success(request, f"Saved {saved_template.name} as a reusable planner template.")
         else:
-            save_planner_entries(request.POST, days)
+            save_planner_entries(request.POST, days, enabled_slots=settings.active_meal_slots)
             messages.success(request, "Meal plan saved.")
         return redirect(f"{reverse('planner')}?week={week_start.isoformat()}")
 
@@ -82,7 +82,7 @@ def planner(request):
         "recipes/planner.html",
         {
             "days": days,
-            "meal_slots": MEAL_SLOTS,
+            "meal_slots": settings.active_meal_slots,
             "recipes": recipes,
             "entries": entries,
             "supermarkets": supermarkets,

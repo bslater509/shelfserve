@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.29
+
+- Add per-slot meal type toggle in Settings to enable or disable breakfast, lunch, or dinner slots globally. Disabled slots are hidden from the planner page and dashboard; existing entries are preserved and reappear if the slot is re-enabled.
+
 ## 0.1.28
 
 - Fix recipe ingredient import parsing for BBC Food metric/imperial alternatives (e.g. `450g/1lb Italian sausages` now correctly extracts 450g).

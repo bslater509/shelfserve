@@ -36,6 +36,9 @@ MEAL_SLOTS = (
 )
 
 
+MEAL_SLOT_KEYS = [k for k, _v in MEAL_SLOTS]
+
+
 class AppSetting(models.Model):
     WEEK_START_CHOICES = (
         (0, "Monday"),
@@ -48,11 +51,17 @@ class AppSetting(models.Model):
     )
 
     week_start = models.PositiveSmallIntegerField(choices=WEEK_START_CHOICES, default=0)
+    enabled_slots = models.JSONField(default=list)
 
     @classmethod
     def current(cls):
         settings, _ = cls.objects.get_or_create(pk=1)
         return settings
+
+    @property
+    def active_meal_slots(self):
+        slots = self.enabled_slots or MEAL_SLOT_KEYS
+        return [(k, v) for k, v in MEAL_SLOTS if k in slots]
 
     def __str__(self):
         return "ShelfServe settings"

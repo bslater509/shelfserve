@@ -111,7 +111,7 @@
 <form method="post" class="planner-form" id="planner-main-form">
   {% csrf_token %}
   <div class="planner-grid-wrapper">
-    <div class="planner-table-header">
+    <div class="planner-table-header" style="grid-template-columns: 140px repeat({{ meal_slots|length }}, 1fr)">
       <div class="grid-header-cell">Day</div>
       {% for slot, label in meal_slots %}
         <div class="grid-header-cell">{{ label }}</div>
@@ -120,7 +120,7 @@
 
     <div class="planner-table-body">
       {% for day in days %}
-        <div class="planner-day-row" data-day-iso="{{ day|date:'Y-m-d' }}">
+        <div class="planner-day-row" data-day-iso="{{ day|date:'Y-m-d' }}" style="grid-template-columns: 140px repeat({{ meal_slots|length }}, 1fr)">
           <div class="day-label-cell">
             <div class="day-meta">
               <strong class="day-name">{{ day|date:"D" }}</strong>

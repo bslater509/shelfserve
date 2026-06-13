@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import AppSetting, PantryItem, Recipe, Supermarket, Unit
+from .models import AppSetting, MEAL_SLOTS, PantryItem, Recipe, Supermarket, Unit
 
 
 class RecipeForm(forms.ModelForm):
@@ -36,6 +36,25 @@ class PantryItemForm(forms.ModelForm):
 
 
 class SettingsForm(forms.ModelForm):
+    enabled_slots = forms.MultipleChoiceField(
+        choices=MEAL_SLOTS,
+        widget=forms.CheckboxSelectMultiple,
+        required=False,
+        label="Enabled meal slots",
+    )
+
     class Meta:
         model = AppSetting
-        fields = ["week_start"]
+        fields = ["week_start", "enabled_slots"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk:
+            self.fields["enabled_slots"].initial = self.instance.enabled_slots or ["breakfast", "lunch", "dinner"]
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.enabled_slots = self.cleaned_data.get("enabled_slots", [])
+        if commit:
+            instance.save()
+        return instance

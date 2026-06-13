@@ -51,15 +51,17 @@ def save_pantry_item_form(form, instance=None):
     return pantry_item
 
 
-def save_planner_entries(post_data, days):
+def save_planner_entries(post_data, days, enabled_slots=None):
+    if enabled_slots is None:
+        enabled_slots = MEAL_SLOTS
     existing_entries = {
         (entry.date, entry.meal_slot): entry
         for entry in MealPlanEntry.objects.filter(date__range=(days[0], days[-1])).select_related("recipe")
     }
-    submitted_entries = collect_planner_entries(post_data, days)
+    submitted_entries = collect_planner_entries(post_data, days, enabled_slots=enabled_slots)
     with transaction.atomic():
         for day in days:
-            for slot, _label in MEAL_SLOTS:
+            for slot, _label in enabled_slots:
                 existing = existing_entries.get((day, slot))
                 submitted = submitted_entries.get((day, slot))
 
@@ -81,10 +83,12 @@ def save_planner_entries(post_data, days):
                 MealPlanEntry.objects.create(date=day, meal_slot=slot, recipe=recipe, servings=servings, note=note)
 
 
-def collect_planner_entries(post_data, days):
+def collect_planner_entries(post_data, days, enabled_slots=None):
+    if enabled_slots is None:
+        enabled_slots = MEAL_SLOTS
     entries = {}
     for day in days:
-        for slot, _label in MEAL_SLOTS:
+        for slot, _label in enabled_slots:
             recipe_id = post_data.get(f"recipe_{day.isoformat()}_{slot}")
             if not recipe_id:
                 continue
