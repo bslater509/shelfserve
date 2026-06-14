@@ -67,7 +67,7 @@ class SettingsForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance.pk:
-            self.fields["enabled_slots"].initial = self.instance.enabled_slots or ["breakfast", "lunch", "dinner"]
+            self.initial["enabled_slots"] = self.instance.enabled_slots or ["breakfast", "lunch", "dinner"]
 
     def save(self, commit=True):
         instance = super().save(commit=False)

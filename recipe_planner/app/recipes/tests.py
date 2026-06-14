@@ -1137,24 +1137,24 @@ class RecipePlannerTests(TestCase):
             )
             mock_parse.assert_called_once()
             self.assertEqual(response.status_code, 302)
-            self.assertEqual(response["Location"], reverse("recipe_create"))
+            self.assertEqual(response["Location"], reverse("recipe_import_wizard"))
             
         # Verify it's in the session
         self.assertEqual(self.client.session["imported_recipe"], mock_data)
         
-        # 2. Test GET to recipe_create view (prepopulation)
-        get_response = self.client.get(reverse("recipe_create"))
+        # 2. Test GET to recipe_import_wizard view (prepopulation)
+        get_response = self.client.get(reverse("recipe_import_wizard"))
         self.assertEqual(get_response.status_code, 200)
         self.assertContains(get_response, "Mocked Egg")
         self.assertContains(get_response, "recipes/imported_mock.jpg")
         self.assertContains(get_response, 'src="/media/recipes/imported_mock.jpg"')
         
-        # The session variable should be cleared now
-        self.assertNotIn("imported_recipe", self.client.session)
+        # The session should NOT be cleared on GET (wizard keeps it for refresh)
+        self.assertIn("imported_recipe", self.client.session)
         
-        # 3. Test saving the prepopulated recipe (including imported image)
+        # 3. Test saving via the wizard
         post_response = self.client.post(
-            reverse("recipe_create"),
+            reverse("recipe_import_wizard"),
             {
                 "title": "Mocked Egg",
                 "servings": "2",
@@ -1174,6 +1174,8 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(post_response["Location"], recipe.get_absolute_url())
         self.assertEqual(recipe.image.name, "recipes/imported_mock.jpg")
         self.assertEqual(recipe.ingredients.count(), 1)
+        # Session should be cleared after save
+        self.assertNotIn("imported_recipe", self.client.session)
 
     def test_imported_image_preview_uses_ingress_media_url(self):
         session = self.client.session
@@ -1584,7 +1586,7 @@ class MockScraper:
         self._ingredients = overrides.get("ingredients", ["200g spaghetti", "2 tbsp olive oil"])
         self._keywords = overrides.get("keywords", ["easy", "pasta"])
         self._category = overrides.get("category", "Dinner")
-        self._image = overrides.get("image", "https://example.com/recipe.jpg")
+        self._image = overrides.get("image", None)
 
     def title(self):
         return self._title
@@ -1605,11 +1607,6 @@ class MockScraper:
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class RecipeParseRecipeUrlTests(TestCase):
     """Tests for parse_recipe_url with mocked scrapers."""
-
-    @classmethod
-    def tearDownClass(cls):
-        super().tearDownClass()
-        shutil.rmtree(django_settings.MEDIA_ROOT, ignore_errors=True)
 
     def test_instructions_list_of_strings(self):
         """Instructions as a list of strings is the most common scraper output."""
@@ -2145,7 +2142,7 @@ class RecipeParserViewIntegrationTests(TestCase):
                 {"raw_text": "Existing Recipe\nIngredients\n1 cup flour\nInstructions\nStep 1"},
             )
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], reverse("recipe_create"))
+        self.assertEqual(response["Location"], reverse("recipe_import_wizard"))
         response2 = self.client.get(response["Location"])
         self.assertContains(response2, "already exists")
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.34
+
+- Add 4-step import wizard after importing a recipe to review and edit basic info, ingredients, steps, and a final summary before saving.
+
 ## 0.1.33
 
 - Fix port mapping: use `ports` instead of `network` in config.yaml so Home Assistant correctly exposes the port on the host network.

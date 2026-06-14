@@ -9,7 +9,7 @@ from .views_planner import (
     planner,
     undo_cook_planner_entry,
 )
-from .views_recipes import recipe_detail, recipe_edit, recipe_import, recipe_list
+from .views_recipes import recipe_detail, recipe_edit, recipe_import, recipe_import_wizard, recipe_list
 from .views_shopping import (
     add_shopping_item,
     delete_shopping_item,
@@ -40,6 +40,7 @@ __all__ = [
     "recipe_detail",
     "recipe_edit",
     "recipe_import",
+    "recipe_import_wizard",
     "recipe_list",
     "regenerate_existing_shopping_list",
     "restock_shopping_list",
