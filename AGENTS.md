@@ -38,20 +38,11 @@ If changing URL, static, or media handling, verify the page through Home Assista
 
 Django's CSRF origin checks must also work through ingress. `recipe_planner/app/shelfserve/middleware.py` normalizes forwarded host and protocol metadata from the request `Origin` header, so Django compares POST requests against the Home Assistant URL rather than the internal add-on backend host. Do not add `SECURE_PROXY_SSL_HEADER` back unless ingress POSTs with stripped `Origin`/`Referer` headers are still verified, because Django's HTTPS CSRF branch rejects those requests.
 
-## Home Assistant Update Path
+## Testing via Docker (primary)
 
-Always provide the user with a clear way to apply repository changes in Home Assistant. Most code, template, static asset, Dockerfile, and add-on metadata changes require rebuilding or reinstalling the add-on image before Home Assistant will run the updated code.
+Always test changes by rebuilding the local Docker container before committing or pushing. See the Docker Compose section below.
 
-When handing off changes, include the relevant update path:
-
-- Before any git push intended to update the Home Assistant add-on, bump `recipe_planner/config.yaml` `version` so Home Assistant can detect the new build.
-- For every Home Assistant add-on update, add a user-facing entry to `recipe_planner/CHANGELOG.md` before pushing.
-- If the add-on was installed from GitHub, commit and push the repo changes, then in Home Assistant go to **Settings > Add-ons > Add-on Store**, open the three-dot menu, choose **Check for updates**, then update or reinstall **ShelfServe**.
-- If Home Assistant does not show an update, confirm the pushed commit includes a bumped `recipe_planner/config.yaml` `version`, check for updates again, then rebuild/update the add-on.
-- If testing locally with the add-on repository mounted or copied into Home Assistant, reload the add-on store, rebuild/reinstall the add-on, and restart **ShelfServe**.
-- After updating, use **Restart** on the add-on page and open the Web UI through Home Assistant ingress to verify the running add-on reflects the repo changes.
-
-Do not leave the user with only local verification steps when the fix is intended for Home Assistant.
+Only push to GitHub and update Home Assistant when the release is final. For those updates, bump `recipe_planner/config.yaml` `version` and add a `recipe_planner/CHANGELOG.md` entry before pushing. After pushing, in Home Assistant go to **Settings > Add-ons > Add-on Store**, three-dot menu → **Check for updates**, then rebuild/update **ShelfServe**.
 
 ## Development Commands
 
@@ -100,11 +91,7 @@ docker build `
   --build-arg BUILD_ARCH=amd64 `
   -t shelfserve:dev `
   recipe_planner
-```
 
-Run the container with a local data volume mounted at `/data` and publish the add-on port:
-
-```powershell
 docker run --rm `
   --name shelfserve-dev `
   -d `
@@ -116,7 +103,7 @@ docker run --rm `
   shelfserve:dev
 ```
 
-Open the local container at `http://127.0.0.1:8099/`. This local Docker mode does not simulate the generated Home Assistant ingress path, so continue to verify ingress-sensitive URL, static, media, and CSRF changes through Home Assistant before handing them off.
+Open the local container at `http://127.0.0.1:8099/`. This local Docker mode does not simulate the generated Home Assistant ingress path.
 
 When local Docker development is requested or already active, keep the `shelfserve-dev` container running at the end of the task unless the user explicitly asks to stop it. After any change to the repository (including code, templates, styles, assets, configuration, metadata, or docs), always rebuild `shelfserve:dev` and recreate the `shelfserve-dev` container, then verify `http://127.0.0.1:8099/` returns HTTP 200 before handing off.
 
@@ -131,7 +118,7 @@ gunicorn shelfserve.wsgi:application --bind 0.0.0.0:${SHELFSERVE_PORT}
 ## Coding Guidelines
 
 - Before analyzing the repository or making changes, run `git status --short` and `git pull` so the local workspace is up to date. If the working tree already has local changes, inspect them first and avoid overwriting user work.
-- After making any intended repo changes, commit and git push them so Home Assistant can update from the remote repository. For Home Assistant add-on updates, bump `recipe_planner/config.yaml` `version` and update `recipe_planner/CHANGELOG.md` before pushing.
+- After making any intended repo changes, rebuild the local Docker container and verify the app before committing or pushing. For Home Assistant add-on updates, also bump `recipe_planner/config.yaml` `version` and update `recipe_planner/CHANGELOG.md` before pushing.
 - Preserve the existing Django structure and simple server-rendered templates.
 - Always check for and utilize existing libraries when implementing new features if required (e.g., recipe-scrapers for recipe imports) to avoid reinventing the wheel.
 - Keep Home Assistant ingress compatibility in mind for every link, form action, static asset, and media URL.
@@ -148,3 +135,4 @@ Before handing off changes:
 - For ingress CSRF changes, run the CSRF-enforcing regression tests in `recipes.tests`.
 - Confirm generated HTML uses the Home Assistant ingress path for navigation and assets.
 - For add-on metadata changes, confirm `recipe_planner/config.yaml` remains valid YAML.
+- Rebuild the local Docker container and verify the app returns HTTP 200 at `http://127.0.0.1:8099/`.
