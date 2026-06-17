@@ -17,6 +17,11 @@ RUN apk add --no-cache \
     py3-pip \
     py3-pillow \
     py3-virtualenv \
+    zlib-dev \
+    libjpeg-turbo-dev \
+    gcc \
+    musl-dev \
+    python3-dev \
   && python3 -m venv /opt/shelfserve/venv
 
 WORKDIR /opt/shelfserve/app

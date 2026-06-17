@@ -1,4 +1,5 @@
 {% extends "recipes/base.html" %}
+{% load recipe_extras %}
 {% block title %}Dashboard - ShelfServe{% endblock %}
 {% block content %}
 <section class="toolbar">
@@ -66,7 +67,7 @@
       <ul class="plain-list">
         {% for item in low_stock_items %}
           <li>
-            <span>{{ item.quantity }} {{ item.unit }} left</span>
+            <span>{{ item.quantity }} {{ item.unit|unit_display }} left</span>
             <a href="{% url 'pantry_list' %}">{{ item.ingredient.name }}</a>
           </li>
         {% endfor %}

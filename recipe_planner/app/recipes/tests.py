@@ -4,7 +4,8 @@ import shutil
 import tempfile
 from datetime import date
 from decimal import Decimal
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from django.conf import settings as django_settings
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -15,6 +16,8 @@ from PIL import Image
 from .models import (
     AppSetting,
     Ingredient,
+    IngredientCategory,
+    IngredientNormalization,
     MealPlanEntry,
     MealPlanTemplate,
     MealPlanTemplateEntry,
@@ -41,6 +44,7 @@ from .parser import (
     download_recipe_image,
 )
 from .services import build_shopping_list, unit_bucket
+from .templatetags.recipe_extras import smart_quantity_display, shopping_item_display
 from .view_helpers import start_of_week
 
 
@@ -77,6 +81,10 @@ class FakeUrlOpenResponse:
 
 @override_settings(MEDIA_ROOT=MEDIA_ROOT)
 class RecipePlannerTests(TestCase):
+    @staticmethod
+    def _cat(name):
+        return IngredientCategory.objects.get_or_create(name=name)[0]
+
     @classmethod
     def tearDownClass(cls):
         super().tearDownClass()
@@ -111,7 +119,7 @@ class RecipePlannerTests(TestCase):
         self.assertTrue(recipe.image.name.startswith("recipes/"))
         self.assertEqual(recipe.tags.count(), 2)
         self.assertEqual(recipe.ingredients.count(), 2)
-        self.assertEqual(Ingredient.objects.get(name="Bread").category, "Bakery")
+        self.assertEqual(Ingredient.objects.get(name="Bread").category.name, "Bakery")
 
     def test_recipe_create_accepts_home_assistant_ingress_origin(self):
         client = Client(enforce_csrf_checks=True)
@@ -470,8 +478,8 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(start_of_week(date(2026, 6, 4), settings.week_start).isoformat(), "2026-05-31")
 
     def test_shopping_list_scales_combines_and_sorts_by_supermarket(self):
-        fruit = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
-        flour = Ingredient.objects.create(name="Plain flour", category="Bakery")
+        fruit = Ingredient.objects.create(name="Tomatoes", category=self._cat("Fruit & veg"))
+        flour = Ingredient.objects.create(name="Plain flour", category=self._cat("Bakery"))
         recipe = Recipe.objects.create(title="Pizza", servings=2)
         RecipeIngredient.objects.create(recipe=recipe, ingredient=fruit, quantity=Decimal("500"), unit=Unit.GRAM, order=1)
         RecipeIngredient.objects.create(recipe=recipe, ingredient=fruit, quantity=Decimal("2"), unit=Unit.ITEM, order=2)
@@ -541,8 +549,8 @@ class RecipePlannerTests(TestCase):
         self.assertFalse(PantryItem.objects.filter(pk=pantry_item.pk).exists())
 
     def test_dashboard_shows_low_stock_pantry_items(self):
-        flour = Ingredient.objects.create(name="Plain flour", category="Bakery")
-        sugar = Ingredient.objects.create(name="Sugar", category="Baking")
+        flour = Ingredient.objects.create(name="Plain flour", category=self._cat("Bakery"))
+        sugar = Ingredient.objects.create(name="Sugar", category=self._cat("Baking"))
         PantryItem.objects.create(ingredient=flour, quantity=Decimal("0.25"), unit=Unit.KILOGRAM, low_stock_threshold=Decimal("0.50"))
         PantryItem.objects.create(ingredient=sugar, quantity=Decimal("2"), unit=Unit.KILOGRAM, low_stock_threshold=Decimal("0.50"))
 
@@ -553,7 +561,7 @@ class RecipePlannerTests(TestCase):
         self.assertNotContains(response, "Sugar")
 
     def test_shopping_list_subtracts_matching_pantry_stock(self):
-        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category=self._cat("Fruit & veg"))
         PantryItem.objects.create(ingredient=tomatoes, quantity=Decimal("0.60"), unit=Unit.KILOGRAM)
         recipe = Recipe.objects.create(title="Pasta", servings=2)
         RecipeIngredient.objects.create(recipe=recipe, ingredient=tomatoes, quantity=Decimal("1000"), unit=Unit.GRAM)
@@ -571,7 +579,7 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(PantryItem.objects.get(pk=PantryItem.objects.first().pk).quantity, Decimal("0.60"))
 
     def test_generate_shopping_list_refreshes_existing_week_list(self):
-        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category=self._cat("Fruit & veg"))
         recipe = Recipe.objects.create(title="Pasta", servings=2)
         recipe_ingredient = RecipeIngredient.objects.create(recipe=recipe, ingredient=tomatoes, quantity=Decimal("100"), unit=Unit.GRAM)
         entry = MealPlanEntry.objects.create(date="2026-06-01", meal_slot="dinner", recipe=recipe, servings=2)
@@ -621,11 +629,11 @@ class RecipePlannerTests(TestCase):
         pantry_item = PantryItem.objects.get(ingredient__name=checked.ingredient_name)
         self.assertEqual(pantry_item.quantity, Decimal("2.00"))
         self.assertEqual(pantry_item.unit, Unit.LITRE)
-        self.assertEqual(pantry_item.ingredient.category, "Dairy")
+        self.assertEqual(pantry_item.ingredient.category.name, "Dairy")
         self.assertFalse(PantryItem.objects.filter(ingredient__name="Bread").exists())
 
     def test_shopping_list_omits_items_fully_covered_by_pantry(self):
-        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category=self._cat("Fruit & veg"))
         PantryItem.objects.create(ingredient=tomatoes, quantity=Decimal("1"), unit=Unit.KILOGRAM)
         recipe = Recipe.objects.create(title="Pasta", servings=2)
         RecipeIngredient.objects.create(recipe=recipe, ingredient=tomatoes, quantity=Decimal("500"), unit=Unit.GRAM)
@@ -637,7 +645,7 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(shopping_list.items.count(), 0)
 
     def test_shopping_list_does_not_subtract_incompatible_pantry_units(self):
-        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category=self._cat("Fruit & veg"))
         PantryItem.objects.create(ingredient=tomatoes, quantity=Decimal("1"), unit=Unit.ITEM)
         recipe = Recipe.objects.create(title="Pasta", servings=2)
         RecipeIngredient.objects.create(recipe=recipe, ingredient=tomatoes, quantity=Decimal("500"), unit=Unit.GRAM)
@@ -715,7 +723,7 @@ class RecipePlannerTests(TestCase):
         self.assertTrue(item2.is_custom)
 
     def test_regenerate_shopping_list_preserves_checked_generated_items_and_custom_items(self):
-        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category=self._cat("Fruit & veg"))
         recipe = Recipe.objects.create(title="Pasta", servings=2)
         recipe_ingredient = RecipeIngredient.objects.create(
             recipe=recipe,
@@ -757,7 +765,7 @@ class RecipePlannerTests(TestCase):
         self.assertTrue(custom_item.checked)
 
     def test_mark_planned_meal_cooked_reduces_pantry_once_and_undo_restores(self):
-        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category=self._cat("Fruit & veg"))
         pantry_item = PantryItem.objects.create(ingredient=tomatoes, quantity=Decimal("1"), unit=Unit.KILOGRAM)
         recipe = Recipe.objects.create(title="Pasta", servings=2)
         RecipeIngredient.objects.create(recipe=recipe, ingredient=tomatoes, quantity=Decimal("500"), unit=Unit.GRAM)
@@ -786,7 +794,7 @@ class RecipePlannerTests(TestCase):
         self.assertFalse(PantryAdjustment.objects.filter(meal_plan_entry=entry).exists())
 
     def test_saving_planner_change_restores_pantry_for_removed_cooked_meal(self):
-        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category=self._cat("Fruit & veg"))
         pantry_item = PantryItem.objects.create(ingredient=tomatoes, quantity=Decimal("1"), unit=Unit.KILOGRAM)
         recipe = Recipe.objects.create(title="Pasta", servings=2)
         RecipeIngredient.objects.create(recipe=recipe, ingredient=tomatoes, quantity=Decimal("500"), unit=Unit.GRAM)
@@ -984,7 +992,7 @@ class RecipePlannerTests(TestCase):
         from .parser import parse_ingredient_line
         res = parse_ingredient_line("2 tbsp butter (melted) (salted)")
         self.assertEqual(res["name"], "butter (salted)")
-        self.assertEqual(res["quantity"], "2.00")
+        self.assertEqual(res["quantity"], "2")
         self.assertEqual(res["unit"], Unit.TABLESPOON)
         self.assertEqual(res["note"], "melted")
 
@@ -1024,20 +1032,20 @@ class RecipePlannerTests(TestCase):
         # Test fractions
         res = parse_ingredient_line("1/2 cup flour, sifted")
         self.assertEqual(res["name"], "flour")
-        self.assertEqual(res["quantity"], "0.50")
-        self.assertEqual(res["unit"], Unit.ITEM)
-        self.assertEqual(res["note"], "cup, sifted")
+        self.assertEqual(res["quantity"], "0.5")
+        self.assertEqual(res["unit"], Unit.CUP)
+        self.assertEqual(res["note"], "sifted")
         
         # Test unicode fractions
         res2 = parse_ingredient_line("1\u00bd tsp salt")
         self.assertEqual(res2["name"], "salt")
-        self.assertEqual(res2["quantity"], "1.50")
+        self.assertEqual(res2["quantity"], "1.5")
         self.assertEqual(res2["unit"], Unit.TEASPOON)
 
         res4 = parse_ingredient_line("\u00bd cup flour")
         self.assertEqual(res4["name"], "flour")
-        self.assertEqual(res4["quantity"], "0.50")
-        self.assertEqual(res4["note"], "cup")
+        self.assertEqual(res4["quantity"], "0.5")
+        self.assertEqual(res4["unit"], Unit.CUP)
 
         res5 = parse_ingredient_line("\u00bc tsp spice")
         self.assertEqual(res5["name"], "spice")
@@ -1045,10 +1053,10 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(res5["unit"], Unit.TEASPOON)
         
         # Test standard decimal & category lookup
-        Ingredient.objects.create(name="chicken breast", category="Meat")
+        Ingredient.objects.create(name="chicken breast", category=self._cat("Meat"))
         res3 = parse_ingredient_line("500.50g chicken breast (skinless)")
         self.assertEqual(res3["name"], "chicken breast")
-        self.assertEqual(res3["quantity"], "500.50")
+        self.assertEqual(res3["quantity"], "500.5")
         self.assertEqual(res3["unit"], Unit.GRAM)
         self.assertEqual(res3["note"], "skinless")
         self.assertEqual(res3["category"], "Meat")
@@ -1060,26 +1068,26 @@ class RecipePlannerTests(TestCase):
         # BBC-style metric/imperial alternative
         res = parse_ingredient_line("450g/1lb Italian sausages")
         self.assertEqual(res["name"], "Italian sausages")
-        self.assertEqual(res["quantity"], "450.00")
+        self.assertEqual(res["quantity"], "450")
         self.assertEqual(res["unit"], Unit.GRAM)
         self.assertEqual(res["note"], "")
 
         res = parse_ingredient_line("225g/8oz cheddar cheese")
         self.assertEqual(res["name"], "cheddar cheese")
-        self.assertEqual(res["quantity"], "225.00")
+        self.assertEqual(res["quantity"], "225")
         self.assertEqual(res["unit"], Unit.GRAM)
 
-        # Slash in non-standard-unit contexts should still work
+        # Slash with cup now maps to proper unit
         res = parse_ingredient_line("1 cup/250ml water")
         self.assertEqual(res["name"], "water")
-        self.assertEqual(res["quantity"], "1.00")
-        self.assertEqual(res["note"], "cup")
+        self.assertEqual(res["quantity"], "1")
+        self.assertEqual(res["unit"], Unit.CUP)
 
         # No regression: standard unit without slash
         res = parse_ingredient_line("500.50g chicken breast (skinless)")
         self.assertEqual(res["name"], "chicken breast")
         self.assertEqual(res["unit"], Unit.GRAM)
-        self.assertEqual(res["quantity"], "500.50")
+        self.assertEqual(res["quantity"], "500.5")
 
     def test_parse_recipe_text(self):
         from .parser import parse_recipe_text
@@ -1094,8 +1102,8 @@ class RecipePlannerTests(TestCase):
         res = parse_recipe_text(raw_text)
         self.assertEqual(res["title"], "Imported Recipe")
         self.assertEqual(len(res["ingredients"]), 2)
-        self.assertEqual(res["ingredients"][0]["name"], "eggs")
-        self.assertEqual(res["ingredients"][0]["quantity"], "2.00")
+        self.assertEqual(res["ingredients"][0]["name"], "egg")
+        self.assertEqual(res["ingredients"][0]["quantity"], "2")
         self.assertEqual(res["steps"][0]["text"], "Melt butter.")
 
     def test_parse_recipe_text_detects_title_and_servings(self):
@@ -1116,8 +1124,7 @@ class RecipePlannerTests(TestCase):
         self.assertEqual(res["ingredients"][0]["name"], "spaghetti")
         self.assertEqual(res["steps"][0]["duration_minutes"], 10)
 
-    def test_recipe_import_views_and_prepopulation(self):
-        # 1. Test POST to recipe_import view with raw text
+    def test_recipe_import_saves_directly(self):
         mock_data = {
             "title": "Mocked Egg",
             "servings": 2,
@@ -1137,44 +1144,18 @@ class RecipePlannerTests(TestCase):
             )
             mock_parse.assert_called_once()
             self.assertEqual(response.status_code, 302)
-            self.assertEqual(response["Location"], reverse("recipe_import_wizard"))
-            
-        # Verify it's in the session
-        self.assertEqual(self.client.session["imported_recipe"], mock_data)
-        
-        # 2. Test GET to recipe_import_wizard view (prepopulation)
-        get_response = self.client.get(reverse("recipe_import_wizard"))
-        self.assertEqual(get_response.status_code, 200)
-        self.assertContains(get_response, "Mocked Egg")
-        self.assertContains(get_response, "recipes/imported_mock.jpg")
-        self.assertContains(get_response, 'src="/media/recipes/imported_mock.jpg"')
-        
-        # The session should NOT be cleared on GET (wizard keeps it for refresh)
-        self.assertIn("imported_recipe", self.client.session)
-        
-        # 3. Test saving via the wizard
-        post_response = self.client.post(
-            reverse("recipe_import_wizard"),
-            {
-                "title": "Mocked Egg",
-                "servings": "2",
-                "step_text": ["Crack and fry."],
-                "step_duration": ["1"],
-                "tags_text": "easy",
-                "ingredient_name": ["egg"],
-                "ingredient_quantity": ["2.00"],
-                "ingredient_unit": [Unit.ITEM],
-                "ingredient_category": ["Dairy"],
-                "ingredient_note": ["large"],
-                "imported_image_path": "recipes/imported_mock.jpg",
-            }
-        )
+
         recipe = Recipe.objects.get(title="Mocked Egg")
-        self.assertEqual(post_response.status_code, 302)
-        self.assertEqual(post_response["Location"], recipe.get_absolute_url())
+        self.assertEqual(response["Location"], recipe.get_absolute_url())
+        self.assertEqual(recipe.servings, 2)
         self.assertEqual(recipe.image.name, "recipes/imported_mock.jpg")
         self.assertEqual(recipe.ingredients.count(), 1)
-        # Session should be cleared after save
+        ing = recipe.ingredients.first()
+        self.assertEqual(ing.ingredient.name, "egg")
+        self.assertEqual(ing.note, "large")
+        self.assertEqual(recipe.steps.count(), 1)
+        self.assertEqual(recipe.steps.first().text, "Crack and fry.")
+        self.assertEqual(list(recipe.tags.values_list("name", flat=True)), ["easy"])
         self.assertNotIn("imported_recipe", self.client.session)
 
     def test_imported_image_preview_uses_ingress_media_url(self):
@@ -1448,7 +1429,7 @@ class RecipePlannerTests(TestCase):
 
     def test_custom_item_checked_state_preserved_after_regeneration(self):
         """Custom shopping items retain their checked state after list regeneration."""
-        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category=self._cat("Fruit & veg"))
         recipe = Recipe.objects.create(title="Pasta", servings=2)
         RecipeIngredient.objects.create(
             recipe=recipe, ingredient=tomatoes, quantity=Decimal("100"), unit=Unit.GRAM,
@@ -1527,12 +1508,12 @@ class RecipePlannerTests(TestCase):
         )
 
         # Ingredient already has a category
-        milk = Ingredient.objects.create(name="Milk", category="Dairy")
+        milk = Ingredient.objects.create(name="Milk", category=self._cat("Dairy"))
 
         response = self.client.post(reverse("restock_shopping_list", args=[shopping_list.pk]))
         self.assertRedirects(response, reverse("shopping_list_detail", args=[shopping_list.pk]))
         milk.refresh_from_db()
-        self.assertEqual(milk.category, "Dairy")  # preserved, not overwritten to "Drinks"
+        self.assertEqual(milk.category.name, "Dairy")  # preserved, not overwritten to "Drinks"
 
     def test_unit_bucket_graceful_fallback(self):
         """unit_bucket returns ITEM group for unknown units instead of crashing."""
@@ -1541,7 +1522,7 @@ class RecipePlannerTests(TestCase):
 
     def test_multi_recipe_pantry_deduction(self):
         """Two recipes sharing the same ingredient correctly split limited pantry stock."""
-        tomatoes = Ingredient.objects.create(name="Tomatoes", category="Fruit & veg")
+        tomatoes = Ingredient.objects.create(name="Tomatoes", category=self._cat("Fruit & veg"))
         PantryItem.objects.create(ingredient=tomatoes, quantity=Decimal("0.50"), unit=Unit.KILOGRAM)
         recipe_a = Recipe.objects.create(title="Pasta", servings=2)
         RecipeIngredient.objects.create(recipe=recipe_a, ingredient=tomatoes, quantity=Decimal("300"), unit=Unit.GRAM)
@@ -1562,18 +1543,62 @@ class RecipePlannerTests(TestCase):
 
     def test_recipe_detail_query_count(self):
         """Recipe detail page uses prefetched steps to avoid N+1 queries."""
+        AppSetting.current()
         recipe = Recipe.objects.create(title="Multi-step recipe", servings=2)
         RecipeStep.objects.create(recipe=recipe, text="Step one", order=0)
         RecipeStep.objects.create(recipe=recipe, text="Step two", order=1)
         RecipeStep.objects.create(recipe=recipe, text="Step three", order=2)
 
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(5):
             # 1. Recipe + tags + ingredients + steps (all prefetched)
             # 2. Ingredient names for select_related
             # 3. Session lookup
+            # 4. AppSetting accent lookup (context processor)
             response = self.client.get(reverse("recipe_detail", args=[recipe.pk]))
 
         self.assertEqual(response.status_code, 200)
+
+    # -- smart quantity display ----------------------------------------------
+
+    def test_smart_quantity_display_kg(self):
+        """1000 g -> '1 kg', 1500 g -> '1.5 kg', 500 g -> '500 g'."""
+        from .templatetags.recipe_extras import smart_quantity_display
+
+        item = Mock(quantity=1000, unit="g")
+        self.assertEqual(smart_quantity_display(item), "1 kg")
+
+        item = Mock(quantity=1500, unit="g")
+        self.assertEqual(smart_quantity_display(item), "1.5 kg")
+
+        item = Mock(quantity=500, unit="g")
+        self.assertIn("500", smart_quantity_display(item))
+        self.assertIn("g", smart_quantity_display(item))
+
+    def test_smart_quantity_display_l(self):
+        """1000 ml -> '1 L', 2500 ml -> '2.5 L'."""
+        from .templatetags.recipe_extras import smart_quantity_display
+
+        item = Mock(quantity=1000, unit="ml")
+        self.assertEqual(smart_quantity_display(item), "1 L")
+
+        item = Mock(quantity=2500, unit="ml")
+        self.assertEqual(smart_quantity_display(item), "2.5 L")
+
+    def test_smart_quantity_display_item(self):
+        """'item' unit hides the unit label."""
+        from .templatetags.recipe_extras import smart_quantity_display
+
+        item = Mock(quantity=3, unit="item")
+        self.assertEqual(smart_quantity_display(item), "3")
+
+    def test_smart_quantity_display_other_units(self):
+        """Non-g/ml units display with their original unit label."""
+        from .templatetags.recipe_extras import smart_quantity_display
+
+        item = Mock(quantity=2, unit="tbsp")
+        result = smart_quantity_display(item)
+        self.assertIn("2", result)
+        self.assertIn("tbsp", result)
 
 
 class MockScraper:
@@ -1739,7 +1764,7 @@ class RecipeParseRecipeUrlTests(TestCase):
             result = parse_recipe_url("https://example.com/bake")
         self.assertEqual(len(result["ingredients"]), 3)
         self.assertEqual(result["ingredients"][0]["name"], "flour")
-        self.assertEqual(result["ingredients"][0]["note"], "cup")
+        self.assertEqual(result["ingredients"][0]["unit"], Unit.CUP)
         self.assertEqual(result["ingredients"][1]["name"], "butter")
         self.assertEqual(result["ingredients"][1]["note"], "melted")
 
@@ -1974,35 +1999,34 @@ class RecipeParseIngredientLineEdgeCases(TestCase):
         """Ingredient with no quantity defaults to 1.0."""
         res = parse_ingredient_line("onion")
         self.assertEqual(res["name"], "onion")
-        self.assertEqual(res["quantity"], "1.00")
+        self.assertEqual(res["quantity"], "1")
         self.assertEqual(res["unit"], Unit.ITEM)
 
     def test_mixed_fraction_with_hyphen(self):
         """Mixed fraction like '1 1/2 cups sugar' works."""
         res = parse_ingredient_line("1 1/2 cups sugar")
         self.assertEqual(res["name"], "sugar")
-        self.assertEqual(res["quantity"], "1.50")
-        self.assertEqual(res["note"], "cup")
+        self.assertEqual(res["quantity"], "1.5")
+        self.assertEqual(res["unit"], Unit.CUP)
 
     def test_of_prefix_after_unit(self):
         """'1 cup of flour' strips 'of' prefix from name."""
         res = parse_ingredient_line("1 cup of flour")
         self.assertEqual(res["name"], "flour")
-        self.assertEqual(res["note"], "cup")
+        self.assertEqual(res["unit"], Unit.CUP)
 
     def test_x_prefix(self):
-        """'1 x 2 litre carton milk' strips 'x' prefix from name."""
+        """'1 x 2 litre carton milk' extracts quantity and unit after 'x'."""
         res = parse_ingredient_line("1 x 2 litre carton milk")
-        # The 'x' should be consumed but '2' doesn't match unit mapping
-        # so whole thing becomes name
-        self.assertEqual(res["unit"], Unit.ITEM)
-        self.assertEqual(res["quantity"], "1.00")
+        self.assertEqual(res["quantity"], "2")
+        self.assertEqual(res["unit"], Unit.LITRE)
+        self.assertEqual(res["name"], "carton milk")
 
     def test_dash_prefix(self):
         """'-' prefix after quantity is stripped."""
         res = parse_ingredient_line("1 - onion")
         self.assertEqual(res["name"], "onion")
-        self.assertEqual(res["quantity"], "1.00")
+        self.assertEqual(res["quantity"], "1")
 
     def test_comma_note(self):
         """Text after comma becomes note."""
@@ -2020,14 +2044,14 @@ class RecipeParseIngredientLineEdgeCases(TestCase):
         """Non-standard unit like 'canned' does not match 'can' mapping because it's the full word 'canned'."""
         res = parse_ingredient_line("400g canned tomatoes")
         self.assertEqual(res["unit"], Unit.GRAM)
-        self.assertEqual(res["quantity"], "400.00")
+        self.assertEqual(res["quantity"], "400")
         self.assertEqual(res["name"], "canned tomatoes")
 
     def test_item_unit_default(self):
         """Plain ingredient with no unit defaults to ITEM."""
         res = parse_ingredient_line("3 eggs")
-        self.assertEqual(res["name"], "eggs")
-        self.assertEqual(res["quantity"], "3.00")
+        self.assertEqual(res["name"], "egg")
+        self.assertEqual(res["quantity"], "3")
         self.assertEqual(res["unit"], Unit.ITEM)
 
     def test_unit_mapping_with_period(self):
@@ -2046,15 +2070,15 @@ class RecipeParseIngredientLineEdgeCases(TestCase):
         """Metric/imperial alternative like '450g/1lb' is parsed."""
         res = parse_ingredient_line("450g/1lb Italian sausages")
         self.assertEqual(res["name"], "Italian sausages")
-        self.assertEqual(res["quantity"], "450.00")
+        self.assertEqual(res["quantity"], "450")
         self.assertEqual(res["unit"], Unit.GRAM)
 
     def test_non_standard_unit_slash(self):
-        """Non-standard unit with slash like '1 cup/250ml' handles cup as note."""
+        """Slash unit with cup now maps to proper unit."""
         res = parse_ingredient_line("1 cup/250ml water")
         self.assertEqual(res["name"], "water")
-        self.assertEqual(res["quantity"], "1.00")
-        self.assertEqual(res["note"], "cup")
+        self.assertEqual(res["quantity"], "1")
+        self.assertEqual(res["unit"], Unit.CUP)
 
     def test_very_long_name(self):
         """Long ingredient names are preserved."""
@@ -2066,21 +2090,169 @@ class RecipeParseIngredientLineEdgeCases(TestCase):
         """Decimal quantities are parsed correctly."""
         res = parse_ingredient_line("0.5 kg chicken")
         self.assertEqual(res["name"], "chicken")
-        self.assertEqual(res["quantity"], "0.50")
+        self.assertEqual(res["quantity"], "0.5")
         self.assertEqual(res["unit"], Unit.KILOGRAM)
 
     def test_unicode_fraction_alone(self):
         """Unicode fraction alone is parsed."""
         res = parse_ingredient_line("\u00bd lemon")
         self.assertEqual(res["name"], "lemon")
-        self.assertEqual(res["quantity"], "0.50")
+        self.assertEqual(res["quantity"], "0.5")
 
     def test_mixed_unicode_fraction(self):
         """Mixed number with unicode fraction is parsed."""
         res = parse_ingredient_line("1\u00bd cups milk")
         self.assertEqual(res["name"], "milk")
-        self.assertEqual(res["quantity"], "1.50")
-        self.assertEqual(res["note"], "cup")
+        self.assertEqual(res["quantity"], "1.5")
+        self.assertEqual(res["unit"], Unit.CUP)
+
+    def test_serving_instruction_to_taste(self):
+        """'Salt and pepper to taste' should be filtered out."""
+        res = parse_ingredient_line("Salt and pepper to taste")
+        self.assertIsNone(res)
+
+    def test_serving_instruction_for_garnish(self):
+        """'Fresh basil for garnish' should be filtered out."""
+        res = parse_ingredient_line("Fresh basil for garnish")
+        self.assertIsNone(res)
+
+    def test_serving_instruction_to_serve(self):
+        """'caster sugar to serve (optional)' should be filtered out."""
+        res = parse_ingredient_line("caster sugar to serve (optional)")
+        self.assertIsNone(res)
+
+    def test_serving_instruction_for_serving(self):
+        """'Parmesan cheese for serving' should be filtered out."""
+        res = parse_ingredient_line("Parmesan cheese for serving")
+        self.assertIsNone(res)
+
+    def test_serving_instruction_comma_to_serve(self):
+        """'Spaghetti, to serve' should be filtered out (note check)."""
+        res = parse_ingredient_line("Spaghetti, to serve")
+        self.assertIsNone(res)
+
+    def test_serving_instruction_for_garnish_colon(self):
+        """'For garnish: fresh herbs' should be filtered out."""
+        res = parse_ingredient_line("For garnish: fresh herbs")
+        self.assertIsNone(res)
+
+    def test_real_ingredient_salt_and_pepper(self):
+        """'salt and pepper' (without 'to taste') should NOT be filtered."""
+        res = parse_ingredient_line("salt and pepper")
+        self.assertIsNotNone(res)
+        self.assertEqual(res["name"], "salt and pepper")
+
+    def test_real_ingredient_basil(self):
+        """'fresh basil' (without 'for garnish') should NOT be filtered."""
+        res = parse_ingredient_line("fresh basil")
+        self.assertIsNotNone(res)
+        self.assertIn("basil", res["name"])
+
+    def test_real_ingredient_basil_leaves_comma_garnish(self):
+        """'fresh basil leaves, for garnish' should be filtered (note check)."""
+        res = parse_ingredient_line("fresh basil leaves, for garnish")
+        self.assertIsNone(res)
+
+    def test_real_ingredient_garnish_with(self):
+        """'garnish with fresh herbs' should be filtered out."""
+        res = parse_ingredient_line("garnish with fresh herbs")
+        self.assertIsNone(res)
+
+    def test_article_a_with_pinch(self):
+        """'a pinch of salt' should detect pinch as unit."""
+        res = parse_ingredient_line("a pinch of salt")
+        self.assertIsNotNone(res)
+        self.assertEqual(res["name"], "salt")
+        self.assertEqual(res["unit"], Unit.PINCH)
+
+    def test_article_a_with_bunch(self):
+        """'a bunch of parsley' should detect bunch as unit."""
+        res = parse_ingredient_line("a bunch of parsley")
+        self.assertIsNotNone(res)
+        self.assertEqual(res["name"], "parsley")
+        self.assertEqual(res["unit"], Unit.BUNCH)
+
+    def test_article_a_before_unit(self):
+        """'a tbsp butter' should detect tbsp as unit."""
+        res = parse_ingredient_line("a tbsp butter")
+        self.assertIsNotNone(res)
+        self.assertEqual(res["name"], "butter")
+        self.assertEqual(res["unit"], Unit.TABLESPOON)
+
+    def test_article_an_no_unit(self):
+        """'an onion' should not crash and default to item."""
+        res = parse_ingredient_line("an onion")
+        self.assertIsNotNone(res)
+        self.assertEqual(res["name"], "onion")
+        self.assertEqual(res["unit"], Unit.ITEM)
+
+    def test_article_an_with_eggplant(self):
+        """'an eggplant' should not crash."""
+        res = parse_ingredient_line("an eggplant")
+        self.assertIsNotNone(res)
+        self.assertEqual(res["name"], "eggplant")
+        self.assertEqual(res["unit"], Unit.ITEM)
+
+    def test_x_prefix_with_weight(self):
+        """'1 x 400g can tomatoes' should extract 400g."""
+        res = parse_ingredient_line("1 x 400g can chopped tomatoes")
+        self.assertIsNotNone(res)
+        self.assertEqual(res["quantity"], "400")
+        self.assertEqual(res["unit"], Unit.GRAM)
+        self.assertNotIn("400g", res["name"])
+
+    def test_x_prefix_with_volume(self):
+        """'1 x 2 litre carton milk' should extract 2 litre."""
+        res = parse_ingredient_line("1 x 2 litre carton milk")
+        self.assertIsNotNone(res)
+        self.assertEqual(res["quantity"], "2")
+        self.assertEqual(res["unit"], Unit.LITRE)
+        self.assertEqual(res["name"], "carton milk")
+
+    def test_x_prefix_no_quantity(self):
+        """'1 x egg' should not override quantity."""
+        res = parse_ingredient_line("1 x egg")
+        self.assertIsNotNone(res)
+        self.assertEqual(res["quantity"], "1")
+        self.assertEqual(res["unit"], Unit.ITEM)
+        self.assertEqual(res["name"], "egg")
+
+    def test_x_prefix_multiple_cans(self):
+        """'2 x 400g can tomatoes' re-extracts inner qty with unit."""
+        res = parse_ingredient_line("2 x 400g can chopped tomatoes")
+        self.assertIsNotNone(res)
+        self.assertEqual(res["quantity"], "400")
+        self.assertEqual(res["unit"], Unit.GRAM)
+        self.assertIn("can chopped tomatoes", res["name"])
+
+    def test_x_prefix_pot_yogurt(self):
+        """'1 x 150g pot natural yogurt' should extract 150g."""
+        res = parse_ingredient_line("1 x 150g pot natural yogurt")
+        self.assertIsNotNone(res)
+        self.assertEqual(res["quantity"], "150")
+        self.assertEqual(res["unit"], Unit.GRAM)
+        self.assertNotIn("150g", res["name"])
+
+    def test_trailing_instruction_plus_for_frying(self):
+        """'1 tbsp oil plus extra for frying' should move trailing text to note."""
+        res = parse_ingredient_line("1 tbsp sunflower oil plus a little extra for frying")
+        self.assertIsNotNone(res)
+        self.assertEqual(res["name"], "sunflower oil")
+        self.assertIn("frying", res["note"])
+
+    def test_trailing_instruction_for_cooking(self):
+        """'200g pasta for cooking' should move 'for cooking' to note."""
+        res = parse_ingredient_line("200g pasta for cooking")
+        self.assertIsNotNone(res)
+        self.assertEqual(res["name"], "pasta")
+        self.assertIn("cooking", res["note"])
+
+    def test_trailing_instruction_no_match_stays_in_name(self):
+        """'extra virgin olive oil' should NOT be split (no instruction word)."""
+        res = parse_ingredient_line("extra virgin olive oil")
+        self.assertIsNotNone(res)
+        self.assertIn("olive", res["name"])
+        self.assertEqual(res["note"], "")
 
 
 class RecipeParserViewIntegrationTests(TestCase):
@@ -2141,10 +2313,9 @@ class RecipeParserViewIntegrationTests(TestCase):
                 reverse("recipe_import"),
                 {"raw_text": "Existing Recipe\nIngredients\n1 cup flour\nInstructions\nStep 1"},
             )
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], reverse("recipe_import_wizard"))
-        response2 = self.client.get(response["Location"])
-        self.assertContains(response2, "already exists")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "already exists")
+        self.assertEqual(Recipe.objects.count(), 1)
 
     def test_get_supported_websites_returns_list(self):
         """get_supported_websites returns a sorted list of domains."""
@@ -2166,3 +2337,214 @@ class RecipeParserViewIntegrationTests(TestCase):
         self.assertEqual(result["servings"], 4)
         self.assertEqual(result["ingredients"], [])
         self.assertEqual(result["steps"], [])
+
+    def test_import_view_no_ingredients_rejected(self):
+        """Import with no ingredients shows error message."""
+        mock_data = {
+            "title": "Empty Recipe",
+            "servings": 4,
+            "steps": [{"text": "Do something", "duration_minutes": None}],
+            "ingredients": [],
+            "tags_list": [],
+            "image_path": "",
+        }
+        with patch("recipes.views_recipes.parse_recipe_text", return_value=mock_data):
+            response = self.client.post(
+                reverse("recipe_import"),
+                {"raw_text": "Empty Recipe\nIngredients\nInstructions\nDo something"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No ingredients could be extracted")
+
+    def test_import_view_no_steps_rejected(self):
+        """Import with no steps shows error message."""
+        mock_data = {
+            "title": "No Steps Recipe",
+            "servings": 4,
+            "steps": [],
+            "ingredients": [{"name": "flour", "quantity": "1.00", "unit": "item", "note": "", "category": ""}],
+            "tags_list": [],
+            "image_path": "",
+        }
+        with patch("recipes.views_recipes.parse_recipe_text", return_value=mock_data):
+            response = self.client.post(
+                reverse("recipe_import"),
+                {"raw_text": "No Steps Recipe\nIngredients\nflour\nInstructions"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No steps could be extracted")
+
+    def test_fallback_parse_ingredients_from_wprm(self):
+        """_fallback_parse_ingredients extracts ingredients from WPRM-style HTML."""
+        from bs4 import BeautifulSoup
+        from recipes.parser import _fallback_parse_ingredients, _load_ingredient_cache
+        from recipes.services import load_normalization_cache
+
+        html = '''
+        <div class="wprm-recipe-ingredients-container">
+          <ul class="wprm-recipe-ingredients">
+            <li class="wprm-recipe-ingredient">
+              <span class="wprm-recipe-ingredient-amount">2</span>
+              <span class="wprm-recipe-ingredient-unit">cups</span>
+              <span class="wprm-recipe-ingredient-name">flour</span>
+            </li>
+            <li class="wprm-recipe-ingredient">
+              <span class="wprm-recipe-ingredient-amount">1</span>
+              <span class="wprm-recipe-ingredient-unit">tbsp</span>
+              <span class="wprm-recipe-ingredient-name">sugar</span>
+            </li>
+          </ul>
+        </div>
+        '''
+        soup = BeautifulSoup(html, "html.parser")
+        ingredient_cache = _load_ingredient_cache()
+        normalization_cache = load_normalization_cache()
+        result = _fallback_parse_ingredients(soup, ingredient_cache, normalization_cache)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["name"], "flour")
+        self.assertEqual(result[1]["name"], "sugar")
+
+    def test_fallback_parse_steps_from_wprm(self):
+        """_fallback_parse_steps extracts steps from WPRM-style HTML."""
+        from bs4 import BeautifulSoup
+        from recipes.parser import _fallback_parse_steps
+
+        html = '''
+        <div class="wprm-recipe-instructions-container">
+          <ol class="wprm-recipe-instructions">
+            <li class="wprm-recipe-instruction">
+              <span>Mix flour and sugar together.</span>
+            </li>
+            <li class="wprm-recipe-instruction">
+              <span>Bake for 30 minutes.</span>
+            </li>
+          </ol>
+        </div>
+        '''
+        soup = BeautifulSoup(html, "html.parser")
+        result = _fallback_parse_steps(soup)
+        self.assertEqual(len(result), 2)
+
+    def test_fallback_parse_ingredients_from_jsonld(self):
+        """_fallback_parse_ingredients extracts from JSON-LD when WPRM absent."""
+        from bs4 import BeautifulSoup
+        from recipes.parser import _fallback_parse_ingredients, _load_ingredient_cache
+        from recipes.services import load_normalization_cache
+
+        html = '''
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Recipe",
+          "recipeIngredient": ["2 cups flour", "1 tbsp sugar"]
+        }
+        </script>
+        '''
+        soup = BeautifulSoup(html, "html.parser")
+        ingredient_cache = _load_ingredient_cache()
+        normalization_cache = load_normalization_cache()
+        result = _fallback_parse_ingredients(soup, ingredient_cache, normalization_cache)
+        self.assertGreaterEqual(len(result), 1)
+
+
+class SmartQuantityDisplayTests(TestCase):
+    """Tests for smart_quantity_display and shopping_item_display filters."""
+
+    def _item(self, quantity, unit):
+        return SimpleNamespace(quantity=quantity, unit=unit)
+
+    # g to kg conversions
+
+    def test_1000g_converts_to_1_kg(self):
+        item = self._item(1000, "g")
+        self.assertEqual(smart_quantity_display(item), "1 kg")
+
+    def test_1500g_converts_to_1_5_kg(self):
+        item = self._item(1500, "g")
+        self.assertEqual(smart_quantity_display(item), "1.5 kg")
+
+    def test_500g_stays_as_500_g(self):
+        item = self._item(500, "g")
+        self.assertEqual(smart_quantity_display(item), "500 g")
+
+    def test_2000g_converts_to_2_kg(self):
+        item = self._item(2000, "g")
+        self.assertEqual(smart_quantity_display(item), "2 kg")
+
+    # ml to L conversions
+
+    def test_1000ml_converts_to_1_L(self):
+        item = self._item(1000, "ml")
+        self.assertEqual(smart_quantity_display(item), "1 L")
+
+    def test_1500ml_converts_to_1_5_L(self):
+        item = self._item(1500, "ml")
+        self.assertEqual(smart_quantity_display(item), "1.5 L")
+
+    def test_500ml_stays_as_500_ml(self):
+        item = self._item(500, "ml")
+        self.assertEqual(smart_quantity_display(item), "500 ml")
+
+    def test_250ml_stays_as_250_ml(self):
+        item = self._item(250, "ml")
+        self.assertEqual(smart_quantity_display(item), "250 ml")
+
+    # item unit hides label
+
+    def test_item_unit_hides_label(self):
+        item = self._item(3, "item")
+        self.assertEqual(smart_quantity_display(item), "3")
+
+    def test_item_unit_decimal_hides_label(self):
+        item = self._item(Decimal("1.5"), "item")
+        self.assertEqual(smart_quantity_display(item), "1.5")
+
+    # other units display as-is
+
+    def test_tbsp_unit(self):
+        item = self._item(2, "tbsp")
+        self.assertEqual(smart_quantity_display(item), "2 tbsp")
+
+    def test_cup_unit(self):
+        item = self._item(1, "cup")
+        self.assertEqual(smart_quantity_display(item), "1 cup")
+
+    def test_kg_unit(self):
+        item = self._item(Decimal("0.5"), "kg")
+        self.assertEqual(smart_quantity_display(item), "0.5 kg")
+
+    def test_L_unit(self):
+        item = self._item(Decimal("1.5"), "L")
+        self.assertEqual(smart_quantity_display(item), "1.5 L")
+
+    # decimal edge cases
+
+    def test_1250g_converts_to_1_25_kg(self):
+        item = self._item(1250, "g")
+        self.assertEqual(smart_quantity_display(item), "1.25 kg")
+
+    def test_250g_stays_as_250_g_decimal(self):
+        item = self._item(250, "g")
+        self.assertEqual(smart_quantity_display(item), "250 g")
+
+    def test_decimal_1000g_converts_to_1_kg(self):
+        item = self._item(Decimal("1000"), "g")
+        self.assertEqual(smart_quantity_display(item), "1 kg")
+
+    # shopping_item_display alias
+
+    def test_shopping_item_display_alias_g_to_kg(self):
+        item = self._item(1500, "g")
+        self.assertEqual(shopping_item_display(item), "1.5 kg")
+
+    def test_shopping_item_display_alias_ml_to_L(self):
+        item = self._item(2000, "ml")
+        self.assertEqual(shopping_item_display(item), "2 L")
+
+    def test_shopping_item_display_alias_other_unit(self):
+        item = self._item(3, "tsp")
+        self.assertEqual(shopping_item_display(item), "3 tsp")
+
+    def test_shopping_item_display_alias_item_unit(self):
+        item = self._item(5, "item")
+        self.assertEqual(shopping_item_display(item), "5")

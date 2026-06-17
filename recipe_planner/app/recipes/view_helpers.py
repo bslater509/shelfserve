@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404
 
 from .models import (
     Ingredient,
+    IngredientCategory,
     MEAL_SLOTS,
     MealPlanEntry,
     MealPlanTemplate,
@@ -266,9 +267,13 @@ def save_recipe_ingredients(recipe, rows):
     recipe.ingredients.all().delete()
     for row in rows:
         ingredient, _ = Ingredient.objects.get_or_create(name=row["name"])
-        if row["category"] and ingredient.category != row["category"]:
-            ingredient.category = row["category"]
-            ingredient.save(update_fields=["category"])
+        if row["category"]:
+            cat_name = normalise_name(row["category"])
+            if cat_name:
+                if not ingredient.category or ingredient.category.name != cat_name:
+                    category, _ = IngredientCategory.objects.get_or_create(name=cat_name)
+                    ingredient.category = category
+                    ingredient.save(update_fields=["category"])
         RecipeIngredient.objects.create(
             recipe=recipe,
             ingredient=ingredient,

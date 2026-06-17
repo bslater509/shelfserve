@@ -3,6 +3,7 @@ import logging
 from django.contrib import messages
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
 from recipe_scrapers._exceptions import WebsiteNotImplementedError
 
@@ -190,7 +191,7 @@ def recipe_edit(request, pk=None):
             steps = imported_steps
 
     suggested_ingredients = list(Ingredient.objects.values_list("name", flat=True).distinct().order_by("name"))
-    suggested_categories = list(Ingredient.objects.exclude(category="").values_list("category", flat=True).distinct().order_by("category"))
+    suggested_categories = list(Ingredient.objects.exclude(category__isnull=True).values_list("category__name", flat=True).distinct().order_by("category__name"))
     return render(
         request,
         "recipes/recipe_form.html",
@@ -207,109 +208,15 @@ def recipe_edit(request, pk=None):
         },
     )
 
-def recipe_import_wizard(request):
-    imported = request.session.get("imported_recipe")
-    if not imported:
-        return redirect("recipe_import")
 
-    imported_image_path = ""
-    imported_image_url = ""
-    ingredients = []
-    steps = []
 
-    if request.method == "POST":
-        form = RecipeForm(request.POST, request.FILES)
-        ingredient_rows = parse_ingredient_rows(request.POST)
-        step_rows = parse_step_rows(request.POST)
 
-        if form.is_valid() and ingredient_rows and step_rows:
-            recipe = form.save(commit=False)
-            imported_img = valid_imported_image_path(request.POST.get("imported_image_path", ""))
-            if imported_img and not request.FILES.get("image"):
-                recipe.image = imported_img
-            recipe.save()
-            save_recipe_tags(recipe, request.POST.get("tags_text", ""))
-            save_recipe_ingredients(recipe, ingredient_rows)
-            save_recipe_steps(recipe, step_rows)
-            messages.success(request, "Recipe saved.")
-            request.session.pop("imported_recipe", None)
-            return redirect(recipe)
-
-        for row in ingredient_rows:
-            ingredients.append({
-                "ingredient": {
-                    "name": row["name"],
-                    "category": row["category"],
-                },
-                "quantity": row["quantity"],
-                "unit": row["unit"],
-                "note": row["note"],
-                "group_name": row.get("group_name", ""),
-            })
-        for row in step_rows:
-            steps.append({
-                "text": row["text"],
-                "duration_minutes": row["duration_minutes"],
-            })
-        if not ingredient_rows:
-            messages.error(request, "Add at least one ingredient with a quantity.")
-        if not step_rows:
-            messages.error(request, "Add at least one instruction step.")
-        imported_image_path = valid_imported_image_path(request.POST.get("imported_image_path", ""))
-        imported_image_url = imported_image_media_url(imported_image_path)
-    else:
-        initial = {
-            "title": imported.get("title", ""),
-            "servings": imported.get("servings", 4),
-            "prep_minutes": imported.get("prep_minutes"),
-            "cook_minutes": imported.get("cook_minutes"),
-            "source_url": imported.get("source_url", ""),
-            "tags_text": ", ".join(imported.get("tags_list", [])),
-        }
-        imported_image_path = valid_imported_image_path(imported.get("image_path", ""))
-        imported_image_url = imported_image_media_url(imported_image_path)
-
-        for ing in imported.get("ingredients", []):
-            ingredients.append({
-                "ingredient": {
-                    "name": ing.get("name", ""),
-                    "category": ing.get("category", ""),
-                },
-                "quantity": ing.get("quantity", "1.00"),
-                "unit": ing.get("unit", "item"),
-                "note": ing.get("note", ""),
-                "group_name": ing.get("group_name", ""),
-            })
-        for step in imported.get("steps", []):
-            if isinstance(step, dict):
-                steps.append({
-                    "text": step.get("text", ""),
-                    "duration_minutes": step.get("duration_minutes"),
-                })
-            else:
-                steps.append({
-                    "text": str(step),
-                    "duration_minutes": None,
-                })
-
-        form = RecipeForm(initial=initial)
-
-    suggested_ingredients = list(Ingredient.objects.values_list("name", flat=True).distinct().order_by("name"))
-    suggested_categories = list(Ingredient.objects.exclude(category="").values_list("category", flat=True).distinct().order_by("category"))
-    return render(
-        request,
-        "recipes/recipe_import_wizard.html",
-        {
-            "form": form,
-            "ingredients": ingredients,
-            "steps": steps,
-            "units": Unit.choices,
-            "suggested_ingredients": suggested_ingredients,
-            "suggested_categories": suggested_categories,
-            "imported_image_path": imported_image_path,
-            "imported_image_url": imported_image_url,
-        },
-    )
+@require_POST
+def recipe_delete(request, pk):
+    recipe = get_object_or_404(Recipe, pk=pk)
+    recipe.delete()
+    messages.success(request, "Recipe deleted.")
+    return redirect("recipe_list")
 
 
 def recipe_import(request):
@@ -334,11 +241,17 @@ def recipe_import(request):
                 else:
                     imported = parse_recipe_text(raw_text)
 
-                request.session["imported_recipe"] = imported
-
-                existing = None
                 title = imported.get("title", "")
                 source_url = imported.get("source_url", "")
+
+                ingredients = imported.get("ingredients", [])
+                steps = imported.get("steps", [])
+                if not ingredients:
+                    raise ValueError("No ingredients could be extracted from this recipe.")
+                if not steps:
+                    raise ValueError("No steps could be extracted from this recipe.")
+
+                existing = None
                 if title and Recipe.objects.filter(title__iexact=title).exists():
                     existing = Recipe.objects.filter(title__iexact=title).first()
                 if not existing and source_url:
@@ -349,8 +262,48 @@ def recipe_import(request):
                     msg = 'A recipe with the title "%s" already exists. <a href="%s">View existing recipe &rarr;</a>'
                     messages.warning(request, msg % (existing.title, existing.get_absolute_url()))
                 else:
-                    messages.success(request, "Recipe imported successfully! Please review and save it.")
-                return redirect("recipe_import_wizard")
+                    image_path = imported.get("image_path", "")
+                    recipe = Recipe(
+                        title=title,
+                        servings=imported.get("servings", 4),
+                        prep_minutes=imported.get("prep_minutes"),
+                        cook_minutes=imported.get("cook_minutes"),
+                        source_url=imported.get("source_url", ""),
+                    )
+                    valid_img = valid_imported_image_path(image_path)
+                    if valid_img:
+                        recipe.image = valid_img
+                    recipe.save()
+                    save_recipe_tags(recipe, ", ".join(imported.get("tags_list", [])))
+                    ingredient_rows = []
+                    for i, ing in enumerate(imported.get("ingredients", [])):
+                        ingredient_rows.append({
+                            "name": ing.get("name", ""),
+                            "quantity": ing.get("quantity", "1.00"),
+                            "unit": ing.get("unit", "item"),
+                            "note": ing.get("note", ""),
+                            "category": ing.get("category", ""),
+                            "group_name": ing.get("group_name", ""),
+                            "order": i,
+                        })
+                    save_recipe_ingredients(recipe, ingredient_rows)
+                    step_rows = []
+                    for i, step in enumerate(imported.get("steps", [])):
+                        if isinstance(step, dict):
+                            step_rows.append({
+                                "text": step.get("text", ""),
+                                "duration_minutes": step.get("duration_minutes"),
+                                "order": i,
+                            })
+                        else:
+                            step_rows.append({
+                                "text": str(step),
+                                "duration_minutes": None,
+                                "order": i,
+                            })
+                    save_recipe_steps(recipe, step_rows)
+                    messages.success(request, "Recipe imported successfully!")
+                    return redirect(recipe)
             except WebsiteNotImplementedError:
                 error_message = "This website is not yet supported for automatic recipe importing."
                 logger.warning("Unsupported website attempted: %s", url)

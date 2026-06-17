@@ -3,6 +3,8 @@ from django.contrib import admin
 from .models import (
     AppSetting,
     Ingredient,
+    IngredientCategory,
+    IngredientNormalization,
     MealPlanEntry,
     MealPlanTemplate,
     MealPlanTemplateEntry,
@@ -33,7 +35,8 @@ class RecipeAdmin(admin.ModelAdmin):
 
 admin.site.register(AppSetting)
 admin.site.register(Tag)
-admin.site.register(Ingredient)
+admin.site.register(IngredientCategory)
+admin.site.register(IngredientNormalization)
 admin.site.register(Supermarket)
 admin.site.register(SupermarketSection)
 admin.site.register(MealPlanEntry)
@@ -44,3 +47,10 @@ admin.site.register(PantryAdjustment)
 admin.site.register(RecipeStep)
 admin.site.register(ShoppingList)
 admin.site.register(ShoppingListItem)
+
+
+@admin.register(Ingredient)
+class IngredientAdmin(admin.ModelAdmin):
+    list_display = ("name", "category", "canonical")
+    list_filter = ("category",)
+    search_fields = ("name",)

@@ -55,7 +55,7 @@ def shopping_list_detail(request, pk):
     # Suggest supermarket-specific sections if any exist
     supermarket_sections = list(shopping_list.supermarket.sections.values_list("name", flat=True).order_by("order", "name"))
     # Merge with general ingredient categories
-    ingredient_categories = list(Ingredient.objects.exclude(category="").values_list("category", flat=True).distinct())
+    ingredient_categories = list(Ingredient.objects.exclude(category__isnull=True).values_list("category__name", flat=True).distinct())
     suggested_categories = sorted(list(set(supermarket_sections + ingredient_categories)))
 
     return render(

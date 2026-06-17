@@ -80,6 +80,12 @@ After code changes, restart the container to pick up the bind-mounted changes wi
 docker compose -f recipe_planner/docker-compose.yml restart
 ```
 
+To prune unused Docker images after rebuilds:
+
+```bash
+docker image prune -f
+```
+
 ### Manual docker commands
 
 To start or recreate the container manually:

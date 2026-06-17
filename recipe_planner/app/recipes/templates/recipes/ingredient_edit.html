@@ -1,0 +1,38 @@
+{% extends "recipes/base.html" %}
+{% block title %}Edit ingredient - ShelfServe{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Edit "{{ ingredient.name }}"</h1>
+    <p class="muted">Update the ingredient name, section, or grouping.</p>
+  </div>
+</section>
+
+{% include "recipes/_settings_tabs.html" %}
+
+<section class="panel form-panel">
+  <form method="post">
+    {% csrf_token %}
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" value="{{ ingredient.name }}" required>
+
+    <label for="category">Section</label>
+    <select id="category" name="category">
+      <option value="">No section</option>
+      {% for cat in categories %}
+        <option value="{{ cat.pk }}" {% if ingredient.category == cat %}selected{% endif %}>{{ cat.name }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="canonical">Group</label>
+    <select id="canonical" name="canonical">
+      <option value="">None</option>
+      {% for ing in all_ingredients %}
+        <option value="{{ ing.pk }}" {% if ingredient.canonical == ing %}selected{% endif %}>{{ ing.name }}</option>
+      {% endfor %}
+    </select>
+
+    <button class="button primary" type="submit">Save ingredient</button>
+  </form>
+</section>
+{% endblock %}

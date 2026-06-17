@@ -41,6 +41,10 @@
     </button>
     <a class="button" href="{% url 'planner' %}">Add to planner</a>
     <a class="button" href="{% url 'recipe_edit' recipe.pk %}">Edit</a>
+    <form method="post" action="{% url 'recipe_delete' recipe.pk %}" style="display:inline">
+      {% csrf_token %}
+      <button type="submit" class="button danger-button-style" onclick="return confirm('Delete this recipe?')">Delete</button>
+    </form>
   </div>
 </section>
 
@@ -57,7 +61,7 @@
     <ul class="ingredient-list">
       {% for item in recipe.ingredients.all %}
         <li class="ingredient-row-item">
-          <strong><span class="ingredient-qty-display" data-qty="{{ item.quantity }}">{{ item.quantity|quantity }}</span> {{ item.unit }}</strong>
+          <strong><span class="ingredient-qty-display" data-qty="{{ item.quantity }}">{{ item.quantity|quantity }}</span> {{ item.unit|unit_display }}</strong>
           <span>{{ item.ingredient.name }}</span>
           {% if item.group_name %}<small class="muted">{{ item.group_name }}</small>{% endif %}
           {% if item.note %}<em>{{ item.note }}</em>{% endif %}

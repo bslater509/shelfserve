@@ -1,0 +1,61 @@
+{
+  "documents": {
+    "developers_home-assistant_io_docs_add-ons_configuration.md": {
+      "url": "https://developers.home-assistant.io/docs/add-ons/configuration",
+      "title": "App configuration | Home Assistant Developer Docs",
+      "fetchedAt": "2026-06-13T20:04:30.322Z",
+      "expiresAt": "2026-06-14T20:04:30.322Z",
+      "size": 15193
+    },
+    "developers_home-assistant_io_docs_add-ons_communication.md": {
+      "url": "https://developers.home-assistant.io/docs/add-ons/communication#network",
+      "title": "App communication | Home Assistant Developer Docs",
+      "fetchedAt": "2026-06-13T20:04:31.462Z",
+      "expiresAt": "2026-06-14T20:04:31.462Z",
+      "size": 4865
+    },
+    "www_allrecipes_com.md": {
+      "url": "https://www.allrecipes.com/",
+      "title": "Allrecipes | Recipes, How-Tos, Videos and More",
+      "fetchedAt": "2026-06-14T19:40:20.289Z",
+      "expiresAt": "2026-06-15T19:40:20.289Z",
+      "size": 7037
+    },
+    "www_budgetbytes_com.md": {
+      "url": "https://www.budgetbytes.com/",
+      "title": "Home - Budget Bytes",
+      "fetchedAt": "2026-06-14T19:40:20.489Z",
+      "expiresAt": "2026-06-15T19:40:20.489Z",
+      "size": 149
+    },
+    "www_simplyrecipes_com.md": {
+      "url": "https://www.simplyrecipes.com/",
+      "title": "Simply Recipes - Less Stress. More Joy",
+      "fetchedAt": "2026-06-14T19:40:20.822Z",
+      "expiresAt": "2026-06-15T19:40:20.822Z",
+      "size": 4965
+    },
+    "opencode_ai.md": {
+      "url": "https://opencode.ai",
+      "title": "OpenCode | The open source AI coding agent",
+      "fetchedAt": "2026-06-15T14:07:04.826Z",
+      "expiresAt": "2026-06-16T14:07:04.826Z",
+      "size": 2790
+    },
+    "opencode_ai_docs.md": {
+      "url": "https://opencode.ai/docs",
+      "title": "Intro | AI coding agent built for the terminal",
+      "fetchedAt": "2026-06-15T14:07:09.832Z",
+      "expiresAt": "2026-06-16T14:07:09.832Z",
+      "size": 8046
+    },
+    "opencode_ai_docs_cli.md": {
+      "url": "https://opencode.ai/docs/cli",
+      "title": "CLI | OpenCode",
+      "fetchedAt": "2026-06-15T14:08:53.271Z",
+      "expiresAt": "2026-06-16T14:08:53.271Z",
+      "size": 15123
+    }
+  },
+  "lastUpdated": "2026-06-15T14:08:53.272Z"
+}

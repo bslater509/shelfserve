@@ -6,11 +6,19 @@
     <h1>Settings</h1>
     <p class="muted">Set defaults that shape planning and list generation.</p>
   </div>
+  <div class="actions">
+    <a class="button" href="{% url 'category_list' %}">Manage Categories</a>
+    <a class="button" href="{% url 'ingredient_list' %}">Manage Ingredients</a>
+  </div>
 </section>
+
+{% include "recipes/_settings_tabs.html" %}
 
 <form method="post" class="panel form-panel">
   {% csrf_token %}
   <label>Week starts on {{ form.week_start }}</label>
+
+  <label>Accent colour {{ form.accent_color }}</label>
 
   <fieldset style="border: none; padding: 0; margin: 0;">
     <legend style="font-weight: 650; margin-bottom: 8px;">Meal slots</legend>

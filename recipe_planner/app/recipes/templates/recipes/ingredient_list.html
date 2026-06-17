@@ -1,0 +1,109 @@
+{% extends "recipes/base.html" %}
+{% load static recipe_extras %}
+{% block title %}Ingredients - ShelfServe{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Manage Ingredients</h1>
+    <p class="muted">
+      {{ total_count }} ingredient{{ total_count|pluralize }} total
+      &middot; {{ total_uncategorised }} unsectioned
+      &middot; {{ total_canonical }} with group
+    </p>
+  </div>
+  <div class="actions">
+    <a class="button" href="{% url 'settings' %}">Settings</a>
+    <a class="button" href="{% url 'category_list' %}">Categories</a>
+  </div>
+</section>
+
+{% include "recipes/_settings_tabs.html" %}
+
+<section class="panel">
+  <form method="get" class="list-filter-bar">
+    <div class="search library-search">
+      <input type="search" name="search" value="{{ search }}" placeholder="Search ingredients&hellip;">
+      <label class="toggle-row">
+        <input type="checkbox" name="uncategorised" value="1"{% if show_uncategorised %} checked{% endif %}>
+        <span>Unsectioned only</span>
+      </label>
+      <select name="category">
+        <option value="">All sections</option>
+        {% for cat in categories %}
+          <option value="{{ cat.name }}"{% if category_filter == cat.name %} selected{% endif %}>{{ cat.name }} ({{ cat.ingredient_count }})</option>
+        {% endfor %}
+      </select>
+      <button class="button primary" type="submit">Filter</button>
+    </div>
+  </form>
+</section>
+
+<form method="post" action="{% url 'ingredient_bulk_categorise' %}">
+  {% csrf_token %}
+  <section class="panel">
+    <div class="ingredient-table">
+      <div class="ingredient-row header">
+        <span class="mobile-field"><span class="mobile-label">Select</span></span>
+        <span class="mobile-field"><span class="mobile-label">Name</span></span>
+        <span class="mobile-field"><span class="mobile-label">Section</span></span>
+        <span class="mobile-field"><span class="mobile-label">Group</span></span>
+      </div>
+      {% for ing in ingredients %}
+        <div class="ingredient-row">
+          <span class="mobile-field">
+            <span class="mobile-label">Select</span>
+            <input type="checkbox" name="ingredient_ids" value="{{ ing.pk }}">
+          </span>
+          <span class="mobile-field">
+            <span class="mobile-label">Name</span>
+            {{ ing.name }}
+          </span>
+          <span class="mobile-field">
+            <span class="mobile-label">Section</span>
+            <form method="post" action="{% url 'ingredient_set_category' ing.pk %}" style="display:inline-flex;gap:4px;">
+              {% csrf_token %}
+              <input type="text" name="category" list="category-suggestions" value="{{ ing.category.name|default:'' }}" size="14" style="min-width:110px;">
+              <button class="button" type="submit" style="padding:2px 8px;font-size:.8rem;">Set</button>
+            </form>
+          </span>
+          <span class="mobile-field">
+            <span class="mobile-label">Group</span>
+            <form method="post" action="{% url 'ingredient_set_canonical' ing.pk %}" style="display:inline-flex;gap:4px;">
+              {% csrf_token %}
+              <input type="text" name="canonical" value="{{ ing.canonical.name|default:'' }}" placeholder="-" size="14" style="min-width:110px;">
+              <button class="button" type="submit" style="padding:2px 8px;font-size:.8rem;">Set</button>
+            </form>
+          </span>
+        </div>
+      {% empty %}
+        <div class="ingredient-row">
+          <span class="mobile-field">No ingredients match the current filters.</span>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="step-actions" style="margin-top:12px;justify-content:flex-start;gap:8px;">
+      <input type="text" name="category" list="category-suggestions" placeholder="Section name" style="max-width:260px;">
+      <button class="button primary" type="submit">Apply Section to Selected</button>
+    </div>
+  </section>
+</form>
+
+<datalist id="category-suggestions">
+  {% for cat in categories %}
+    <option value="{{ cat.name }}">
+  {% endfor %}
+</datalist>
+
+{% if ingredients.has_other_pages %}
+<nav style="margin-top:16px;display:flex;gap:8px;align-items:center;justify-content:center;">
+  {% if ingredients.has_previous %}
+    <a class="button" href="?search={{ search|urlencode }}&category={{ category_filter|urlencode }}&uncategorised={% if show_uncategorised %}1{% endif %}&page={{ ingredients.previous_page_number }}">&larr; Previous</a>
+  {% endif %}
+  <span class="muted">Page {{ ingredients.number }} of {{ ingredients.paginator.num_pages }}</span>
+  {% if ingredients.has_next %}
+    <a class="button" href="?search={{ search|urlencode }}&category={{ category_filter|urlencode }}&uncategorised={% if show_uncategorised %}1{% endif %}&page={{ ingredients.next_page_number }}">Next &rarr;</a>
+  {% endif %}
+</nav>
+{% endif %}
+{% endblock %}

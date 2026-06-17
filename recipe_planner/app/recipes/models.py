@@ -13,8 +13,18 @@ class Unit(models.TextChoices):
     LITRE = "l", "l"
     TEASPOON = "tsp", "tsp"
     TABLESPOON = "tbsp", "tbsp"
+    CUP = "cup", "cup"
+    CLOVE = "clove", "clove"
+    PINCH = "pinch", "pinch"
+    SLICE = "slice", "slice"
+    PIECE = "piece", "piece"
+    HEAD = "head", "head"
+    BUNCH = "bunch", "bunch"
+    STALK = "stalk", "stalk"
     ITEM = "item", "item"
     PACK = "pack", "pack"
+    POUND = "lb", "lb"
+    OUNCE = "oz", "oz"
 
 
 UNIT_GROUPS = {
@@ -24,8 +34,18 @@ UNIT_GROUPS = {
     Unit.LITRE: ("volume", Decimal("1000"), Unit.MILLILITRE),
     Unit.TEASPOON: ("volume", Decimal("5"), Unit.MILLILITRE),
     Unit.TABLESPOON: ("volume", Decimal("15"), Unit.MILLILITRE),
+    Unit.CUP: ("volume", Decimal("240"), Unit.MILLILITRE),
+    Unit.CLOVE: ("item", Decimal("1"), Unit.ITEM),
+    Unit.PINCH: ("item", Decimal("1"), Unit.ITEM),
+    Unit.SLICE: ("item", Decimal("1"), Unit.ITEM),
+    Unit.PIECE: ("item", Decimal("1"), Unit.ITEM),
+    Unit.HEAD: ("item", Decimal("1"), Unit.ITEM),
+    Unit.BUNCH: ("item", Decimal("1"), Unit.ITEM),
+    Unit.STALK: ("item", Decimal("1"), Unit.ITEM),
     Unit.ITEM: ("item", Decimal("1"), Unit.ITEM),
     Unit.PACK: ("pack", Decimal("1"), Unit.PACK),
+    Unit.POUND: ("mass", Decimal("453.592"), Unit.GRAM),
+    Unit.OUNCE: ("mass", Decimal("28.3495"), Unit.GRAM),
 }
 
 
@@ -40,6 +60,14 @@ MEAL_SLOT_KEYS = [k for k, _v in MEAL_SLOTS]
 
 
 class AppSetting(models.Model):
+    ACCENT_CHOICES = (
+        ("green", "Green"),
+        ("teal", "Teal"),
+        ("blue", "Blue"),
+        ("purple", "Purple"),
+        ("pink", "Pink"),
+    )
+
     WEEK_START_CHOICES = (
         (0, "Monday"),
         (1, "Tuesday"),
@@ -52,6 +80,7 @@ class AppSetting(models.Model):
 
     week_start = models.PositiveSmallIntegerField(choices=WEEK_START_CHOICES, default=0)
     enabled_slots = models.JSONField(default=list)
+    accent_color = models.CharField(max_length=20, choices=ACCENT_CHOICES, default="green")
 
     @classmethod
     def current(cls):
@@ -77,12 +106,34 @@ class Tag(models.Model):
         return self.name
 
 
+class IngredientCategory(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "name"]
+        verbose_name_plural = "ingredient categories"
+
+    def __str__(self):
+        return self.name
+
+
 class Ingredient(models.Model):
     name = models.CharField(max_length=120, unique=True)
-    category = models.CharField(
-        max_length=120,
+    category = models.ForeignKey(
+        "IngredientCategory",
+        null=True,
         blank=True,
+        on_delete=models.SET_NULL,
         help_text="Supermarket section, such as Fruit & veg or Bakery.",
+    )
+    canonical = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="variants",
+        help_text="Canonical ingredient for shopping list grouping.",
     )
 
     class Meta:
@@ -90,6 +141,17 @@ class Ingredient(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class IngredientNormalization(models.Model):
+    match_pattern = models.CharField(max_length=200, unique=True, help_text="Raw ingredient text to match, e.g. 'plain flour'")
+    canonical_name = models.CharField(max_length=200, db_index=True, help_text="Canonical ingredient name, e.g. 'all-purpose flour'")
+
+    class Meta:
+        ordering = ["match_pattern"]
+
+    def __str__(self):
+        return f"{self.match_pattern} -> {self.canonical_name}"
 
 
 class Recipe(models.Model):
@@ -128,6 +190,8 @@ class RecipeIngredient(models.Model):
         ordering = ["order", "ingredient__name"]
 
     def __str__(self):
+        if self.unit == Unit.ITEM:
+            return f"{self.quantity:g} {self.ingredient.name}"
         return f"{self.quantity:g} {self.unit} {self.ingredient.name}"
 
 

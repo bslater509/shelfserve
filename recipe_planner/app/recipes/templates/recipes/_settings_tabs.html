@@ -1,0 +1,5 @@
+<nav class="settings-tabs">
+  <a href="{% url 'settings' %}" class="tab {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">General</a>
+  <a href="{% url 'category_list' %}" class="tab {% if 'category' in request.resolver_match.url_name %}active{% endif %}">Categories</a>
+  <a href="{% url 'ingredient_list' %}" class="tab {% if 'ingredient' in request.resolver_match.url_name %}active{% endif %}">Ingredients</a>
+</nav>

@@ -4,7 +4,7 @@ services:
       context: .
     container_name: shelfserve-dev
     ports:
-      - "127.0.0.1:8099:8099"
+      - "8099:8099"
     environment:
       SHELFSERVE_SECRET_KEY: development-only-change-me
       SHELFSERVE_DEBUG: "1"

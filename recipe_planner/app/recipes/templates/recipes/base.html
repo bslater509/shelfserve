@@ -1,9 +1,17 @@
 {% load static recipe_extras %}
 <!doctype html>
-<html lang="en-gb">
+<html lang="en-gb" data-theme="system" data-accent="{{ accent_color }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>
+    (function() {
+      var theme = localStorage.getItem('shelfserve-theme');
+      if (theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+      }
+    })();
+  </script>
   {% if request.META.SCRIPT_NAME %}
   <base href="{{ request.META.SCRIPT_NAME }}/">
   {% else %}
@@ -25,11 +33,12 @@
     </a>
     <nav class="nav">
       <a href="{% url 'dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">Dashboard</a>
-      <a href="{% url 'recipe_list' %}" class="{% if request.resolver_match.url_name == 'recipe_list' or request.resolver_match.url_name == 'recipe_detail' or request.resolver_match.url_name == 'recipe_create' or request.resolver_match.url_name == 'recipe_edit' or request.resolver_match.url_name == 'recipe_import' or request.resolver_match.url_name == 'recipe_import_wizard' %}active{% endif %}">Recipes</a>
+      <a href="{% url 'recipe_list' %}" class="{% if request.resolver_match.url_name == 'recipe_list' or request.resolver_match.url_name == 'recipe_detail' or request.resolver_match.url_name == 'recipe_create' or request.resolver_match.url_name == 'recipe_edit' or request.resolver_match.url_name == 'recipe_import' %}active{% endif %}">Recipes</a>
       <a href="{% url 'pantry_list' %}" class="{% if request.resolver_match.url_name == 'pantry_list' or request.resolver_match.url_name == 'edit_pantry_item' or request.resolver_match.url_name == 'delete_pantry_item' %}active{% endif %}">Pantry</a>
       <a href="{% url 'planner' %}" class="{% if request.resolver_match.url_name == 'planner' %}active{% endif %}">Planner</a>
       <a href="{% url 'supermarket_list' %}" class="{% if request.resolver_match.url_name == 'supermarket_list' or request.resolver_match.url_name == 'supermarket_detail' %}active{% endif %}">Supermarkets</a>
-      <a href="{% url 'settings' %}" class="{% if request.resolver_match.url_name == 'settings' %}active{% endif %}">Settings</a>
+      <a href="{% url 'settings' %}" class="{% if request.resolver_match.url_name == 'settings' or 'category' in request.resolver_match.url_name or 'ingredient' in request.resolver_match.url_name %}active{% endif %}">Settings</a>
+      <button class="theme-toggle" id="themeToggle" title="Toggle theme">🌓</button>
     </nav>
   </header>
 
@@ -43,6 +52,27 @@
     {% endif %}
     {% block content %}{% endblock %}
   </main>
+  <script>
+    (function() {
+      var btn = document.getElementById('themeToggle');
+      if (!btn) return;
+      btn.addEventListener('click', function() {
+        var html = document.documentElement;
+        var current = html.getAttribute('data-theme') || 'system';
+        var next;
+        if (current === 'dark') {
+          next = 'light';
+        } else if (current === 'light') {
+          next = 'dark';
+        } else {
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          next = prefersDark ? 'light' : 'dark';
+        }
+        html.setAttribute('data-theme', next);
+        localStorage.setItem('shelfserve-theme', next);
+      });
+    })();
+  </script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

@@ -60,11 +60,11 @@
             {% csrf_token %}
             <button class="check-button" type="submit" aria-label="Toggle item">{% if item.checked %}&#10003;{% endif %}</button>
           </form>
-          <span class="amount">{{ item.quantity|quantity }} {{ item.unit }}</span>
+          <span class="amount">{% format_shopping_quantity item.quantity item.unit %}</span>
           <span class="item-name">{{ item.ingredient_name }}</span>
           <div class="item-meta">
             {% if item.pantry_used_quantity %}
-              <span class="muted">pantry covered {{ item.pantry_used_quantity|quantity }} {{ item.pantry_used_unit }}</span>
+              <span class="muted">pantry covered {% format_shopping_quantity item.pantry_used_quantity item.pantry_used_unit %}</span>
             {% endif %}
             {% if item.notes %}<span class="muted">{{ item.notes }}</span>{% endif %}
             {% if item.is_custom %}<span class="custom-badge">Custom</span>{% endif %}

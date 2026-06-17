@@ -1,0 +1,67 @@
+{% extends "recipes/base.html" %}
+{% load static recipe_extras %}
+{% block title %}Categories - ShelfServe{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Manage Categories</h1>
+    <p class="muted">{{ categories|length }} categor{{ categories|length|pluralize:"y,ies" }}</p>
+  </div>
+  <div class="actions">
+    <a class="button" href="{% url 'settings' %}">Settings</a>
+  </div>
+</section>
+
+{% include "recipes/_settings_tabs.html" %}
+
+<div class="panel">
+  <h2>New category</h2>
+  <form method="post" action="{% url 'category_create' %}" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+    {% csrf_token %}
+    <input type="text" name="name" placeholder="Category name" required maxlength="120" style="min-width:220px;">
+    <button class="button primary" type="submit">Add</button>
+  </form>
+</div>
+
+{% if categories %}
+<div class="panel">
+  <h2>Saved categories</h2>
+  <div class="ingredient-table">
+    <div class="ingredient-row header">
+      <span>Name</span>
+      <span>Ingredients</span>
+      <span>Order</span>
+    </div>
+    {% for cat in categories %}
+      <div class="ingredient-row">
+        <span>
+          <form method="post" action="{% url 'category_rename' cat.pk %}" style="display:inline-flex;gap:4px;">
+            {% csrf_token %}
+            <input type="text" name="name" value="{{ cat.name }}" maxlength="120" required style="min-width:140px;" onchange="this.form.submit()">
+          </form>
+        </span>
+        <span class="muted">{{ cat.ingredient_count }}</span>
+        <span style="display:flex;gap:4px;align-items:center;">
+          <form method="post" action="{% url 'category_move_up' cat.pk %}" style="display:inline;">
+            {% csrf_token %}
+            <button class="button compact" title="Move up" type="submit">&uarr;</button>
+          </form>
+          <form method="post" action="{% url 'category_move_down' cat.pk %}" style="display:inline;">
+            {% csrf_token %}
+            <button class="button compact" title="Move down" type="submit">&darr;</button>
+          </form>
+          <form method="post" action="{% url 'category_delete' cat.pk %}" style="display:inline;" onsubmit="return confirm('Delete category \u201c{{ cat.name|escapejs }}\u201d?');">
+            {% csrf_token %}
+            <button class="button compact" title="Delete" type="submit" style="color:var(--accent);">&times;</button>
+          </form>
+        </span>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="panel">
+  <p class="muted">No categories yet. Create one above.</p>
+</div>
+{% endif %}
+{% endblock %}

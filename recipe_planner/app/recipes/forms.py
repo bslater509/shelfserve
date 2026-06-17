@@ -62,7 +62,7 @@ class SettingsForm(forms.ModelForm):
 
     class Meta:
         model = AppSetting
-        fields = ["week_start", "enabled_slots"]
+        fields = ["week_start", "enabled_slots", "accent_color"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

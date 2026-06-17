@@ -56,14 +56,14 @@
   <ul class="shopping-items pantry-items">
     {% for item in pantry_items %}
       <li data-pantry-row data-filter-text="{{ item.ingredient.name }} {{ item.note }} {{ item.unit }}">
-        <span class="amount">{{ item.quantity|quantity }} {{ item.unit }}</span>
+        <span class="amount">{{ item.quantity|quantity }} {{ item.unit|unit_display }}</span>
         <span class="item-name">{{ item.ingredient.name }}</span>
         <div class="item-meta">
           {% if item.low_stock_threshold is not None and item.quantity <= item.low_stock_threshold %}
             <span class="custom-badge">Low stock</span>
           {% endif %}
           {% if item.low_stock_threshold is not None %}
-            <span class="muted">low at {{ item.low_stock_threshold|quantity }} {{ item.unit }}</span>
+            <span class="muted">low at {{ item.low_stock_threshold|quantity }} {{ item.unit|unit_display }}</span>
           {% endif %}
           {% if item.note %}<span class="muted">{{ item.note }}</span>{% endif %}
         </div>

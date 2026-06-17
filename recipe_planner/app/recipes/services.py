@@ -6,6 +6,8 @@ from django.utils import timezone
 
 from .models import (
     Ingredient,
+    IngredientCategory,
+    IngredientNormalization,
     PantryAdjustment,
     PantryItem,
     ShoppingList,
@@ -22,6 +24,31 @@ def normalise_tag_name(name):
 
 def normalise_name(name):
     return " ".join(name.strip().split())
+
+
+def normalise_ingredient_name(name, cache=None):
+    """Normalise an ingredient name through the IngredientNormalization table."""
+    normalised = normalise_name(name)
+    if normalised:
+        lookup_key = normalised.lower()
+        if cache is not None:
+            canonical = cache.get(lookup_key)
+        else:
+            entry = IngredientNormalization.objects.filter(match_pattern__iexact=normalised).values_list("canonical_name", flat=True).first()
+            canonical = entry
+        if canonical:
+            return canonical
+    return normalised
+
+
+def load_normalization_cache():
+    """Pre-load all normalization entries into a dict for fast lookups."""
+    cache = {}
+    for entry in IngredientNormalization.objects.values("match_pattern", "canonical_name").all():
+        key = entry["match_pattern"].lower()
+        if key not in cache:
+            cache[key] = entry["canonical_name"]
+    return cache
 
 
 def display_quantity(value):
@@ -70,21 +97,22 @@ def planned_shopping_items(supermarket, plan_entries, subtract_pantry=True):
     sections = section_lookup(supermarket)
     grouped = defaultdict(lambda: {"quantity": Decimal("0"), "notes": set()})
 
-    for entry in plan_entries.select_related("recipe").prefetch_related("recipe__ingredients__ingredient"):
+    for entry in plan_entries.select_related("recipe").prefetch_related("recipe__ingredients__ingredient__canonical"):
         for recipe_ingredient in entry.recipe.ingredients.all():
             ingredient = recipe_ingredient.ingredient
+            canonical_name = ingredient.canonical.name if ingredient.canonical else ingredient.name
             group, multiplier, base_unit = unit_bucket(recipe_ingredient.unit)
             scaled = scale_quantity(recipe_ingredient.quantity, entry.servings, entry.recipe.servings)
-            section_key = (ingredient.category or "Uncategorised").strip()
+            section_key = ingredient.category.name.strip() if ingredient.category else "Uncategorised"
             converted = scaled * multiplier
             key = (
                 section_key.lower(),
-                ingredient.name.lower(),
+                canonical_name.lower(),
                 group,
                 base_unit,
             )
             grouped[key]["section_name"] = section_key
-            grouped[key]["ingredient_name"] = ingredient.name
+            grouped[key]["ingredient_name"] = canonical_name
             grouped[key]["quantity"] += converted
             grouped[key]["unit"] = base_unit
             if recipe_ingredient.note:
@@ -206,7 +234,10 @@ def restock_pantry_from_checked_items(shopping_list):
         for item in items:
             ingredient, _ = Ingredient.objects.get_or_create(name=normalise_name(item.ingredient_name))
             if not ingredient.category and item.section_name:
-                ingredient.category = item.section_name
+                category, _ = IngredientCategory.objects.get_or_create(
+                    name=item.section_name.strip(),
+                )
+                ingredient.category = category
                 ingredient.save(update_fields=["category"])
             pantry_item, _ = PantryItem.objects.select_for_update().get_or_create(
                 ingredient=ingredient,

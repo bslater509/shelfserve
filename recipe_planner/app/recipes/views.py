@@ -2,6 +2,7 @@
 
 from .parser import get_supported_websites, parse_recipe_text, parse_recipe_url
 from .views_dashboard import dashboard
+from .views_ingredients import ingredient_bulk_categorise, ingredient_edit, ingredient_list, ingredient_set_canonical, ingredient_set_category
 from .views_pantry import delete_pantry_item, edit_pantry_item, pantry_list
 from .views_planner import (
     cook_planner_entry,
@@ -9,7 +10,7 @@ from .views_planner import (
     planner,
     undo_cook_planner_entry,
 )
-from .views_recipes import recipe_detail, recipe_edit, recipe_import, recipe_import_wizard, recipe_list
+from .views_recipes import recipe_delete, recipe_detail, recipe_edit, recipe_import, recipe_list
 from .views_shopping import (
     add_shopping_item,
     delete_shopping_item,
@@ -33,14 +34,19 @@ __all__ = [
     "edit_pantry_item",
     "edit_shopping_item",
     "generate_shopping_list",
+    "ingredient_bulk_categorise",
+    "ingredient_edit",
+    "ingredient_list",
+    "ingredient_set_canonical",
+    "ingredient_set_category",
     "pantry_list",
     "planner",
     "parse_recipe_text",
     "parse_recipe_url",
+    "recipe_delete",
     "recipe_detail",
     "recipe_edit",
     "recipe_import",
-    "recipe_import_wizard",
     "recipe_list",
     "regenerate_existing_shopping_list",
     "restock_shopping_list",

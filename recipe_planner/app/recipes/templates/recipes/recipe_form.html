@@ -46,13 +46,13 @@
       {% for item in ingredients %}
         <div class="ingredient-row">
           <input name="ingredient_name" value="{{ item.ingredient.name }}" required list="ingredient-names-datalist">
-          <input name="ingredient_quantity" value="{{ item.quantity }}" type="number" min="0.01" step="0.01" required>
+          <input name="ingredient_quantity" value="{{ item.quantity|quantity }}" type="number" min="0.01" step="0.01" required>
           <select name="ingredient_unit">
             {% for value,label in units %}
               <option value="{{ value }}" {% if item.unit == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
-          <input name="ingredient_category" value="{{ item.ingredient.category }}" placeholder="Aisle" list="ingredient-categories-datalist">
+          <input name="ingredient_category" value="{{ item.ingredient.category }}" placeholder="Section" list="ingredient-categories-datalist">
           <input name="ingredient_group" value="{{ item.group_name }}" placeholder="Group" list="ingredient-groups-datalist">
           <input name="ingredient_note" value="{{ item.note }}" placeholder="Optional">
           <div class="step-actions">
@@ -70,7 +70,7 @@
               <option value="{{ value }}">{{ label }}</option>
             {% endfor %}
           </select>
-          <input name="ingredient_category" placeholder="Aisle" list="ingredient-categories-datalist">
+          <input name="ingredient_category" placeholder="Section" list="ingredient-categories-datalist">
           <input name="ingredient_group" placeholder="Group" list="ingredient-groups-datalist">
           <input name="ingredient_note" placeholder="Optional">
           <div class="step-actions">
@@ -131,7 +131,7 @@
         <option value="{{ value }}">{{ label }}</option>
       {% endfor %}
     </select>
-    <input name="ingredient_category" placeholder="Aisle" list="ingredient-categories-datalist">
+    <input name="ingredient_category" placeholder="Section" list="ingredient-categories-datalist">
     <input name="ingredient_group" placeholder="Group" list="ingredient-groups-datalist">
     <input name="ingredient_note" placeholder="Optional">
     <div class="step-actions">

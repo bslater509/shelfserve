@@ -1,4 +1,5 @@
 import io
+import json
 import logging
 import re
 import uuid
@@ -12,7 +13,7 @@ from recipe_scrapers import get_supported_urls, scrape_me
 from recipe_scrapers._exceptions import WebsiteNotImplementedError
 
 from recipes.models import Ingredient, Unit
-from recipes.services import normalise_name
+from recipes.services import display_quantity, load_normalization_cache, normalise_ingredient_name, normalise_name
 
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,17 @@ UNICODE_FRACTIONS = {
     "\u215e": Decimal("0.875"),
 }
 UNICODE_FRACTION_PATTERN = "".join(re.escape(char) for char in UNICODE_FRACTIONS)
+
+SERVING_PATTERNS = (
+    "to taste",
+    "for garnish",
+    "for serving",
+    "to serve",
+    "for garnish:",
+    "for decoration",
+    "for dusting",
+    "garnish with",
+)
 
 UNIT_MAPPING = {
     "g": Unit.GRAM,
@@ -62,6 +74,22 @@ UNIT_MAPPING = {
     "tbsp.": Unit.TABLESPOON,
     "tablespoon": Unit.TABLESPOON,
     "tablespoons": Unit.TABLESPOON,
+    "cup": Unit.CUP,
+    "cups": Unit.CUP,
+    "clove": Unit.CLOVE,
+    "cloves": Unit.CLOVE,
+    "pinch": Unit.PINCH,
+    "pinches": Unit.PINCH,
+    "slice": Unit.SLICE,
+    "slices": Unit.SLICE,
+    "piece": Unit.PIECE,
+    "pieces": Unit.PIECE,
+    "head": Unit.HEAD,
+    "heads": Unit.HEAD,
+    "bunch": Unit.BUNCH,
+    "bunches": Unit.BUNCH,
+    "stalk": Unit.STALK,
+    "stalks": Unit.STALK,
     "pack": Unit.PACK,
     "packs": Unit.PACK,
     "package": Unit.PACK,
@@ -80,34 +108,41 @@ UNIT_MAPPING = {
     "bottles": Unit.PACK,
     "jar": Unit.PACK,
     "jars": Unit.PACK,
+    "rasher": Unit.SLICE,
+    "rashers": Unit.SLICE,
+    "lb": Unit.POUND,
+    "lbs": Unit.POUND,
+    "pound": Unit.POUND,
+    "pounds": Unit.POUND,
+    "oz": Unit.OUNCE,
+    "ounce": Unit.OUNCE,
+    "ounces": Unit.OUNCE,
 }
 
-NON_STANDARD_UNITS = {
-    "cup": "cup",
-    "cups": "cup",
-    "clove": "clove",
-    "cloves": "clove",
-    "pinch": "pinch",
-    "pinches": "pinch",
-    "slice": "slice",
-    "slices": "slice",
-    "piece": "piece",
-    "pieces": "piece",
-    "head": "head",
-    "heads": "head",
-    "bunch": "bunch",
-    "bunches": "bunch",
-    "stalk": "stalk",
-    "stalks": "stalk",
-    "can": "can",
-    "cans": "can",
-    "tin": "tin",
-    "tins": "tin",
-    "bottle": "bottle",
-    "bottles": "bottle",
-    "jar": "jar",
-    "jars": "jar",
+NON_STANDARD_UNITS = {}
+
+UNIT_ADJECTIVES = {"heaped", "heaping", "level", "rounded", "scant", "generous"}
+
+ARTICLES = {"a", "an"}
+
+CONTAINER_WORDS = {
+    "can", "cans", "tin", "tins", "jar", "jars",
+    "bottle", "bottles", "carton", "cartons",
+    "pot", "pots", "pack", "packs", "bag", "bags", "box", "boxes",
 }
+
+INSTRUCTION_SEPARATORS = (
+    " plus a little ",
+    " plus ",
+    " extra ",
+    " for ",
+)
+
+INSTRUCTION_TRAILING_WORDS = frozenset({
+    "frying", "cooking", "serving", "garnish", "decoration",
+    "dusting", "dipping", "drizzling", "basting", "glazing",
+    "sprinkling", "coating", "mixing", "stirring", "whisking",
+})
 
 
 def download_recipe_image(image_url):
@@ -193,12 +228,14 @@ def scraper_minutes(scraper, method_name):
 
 def _load_ingredient_cache():
     """Pre-load all existing ingredients into a dict keyed by normalised name."""
-    ingredients = Ingredient.objects.values("name", "category").all()
+    ingredients = Ingredient.objects.select_related("category").values(
+        "name", "category__name"
+    ).all()
     cache = {}
     for entry in ingredients:
         key = normalise_name(entry["name"]).lower()
         if key not in cache:
-            cache[key] = entry["category"] or ""
+            cache[key] = entry["category__name"] or ""
     return cache
 
 
@@ -210,7 +247,51 @@ def _ingredient_category(name, cache):
     return cache.get(key, "")
 
 
-def parse_ingredient_line(line, ingredient_cache=None):
+def _is_serving_instruction(name, note):
+    """Check if a parsed ingredient line is actually a serving/garnish instruction."""
+    name_lower = (name or "").lower()
+    note_lower = (note or "").lower()
+    for pattern in SERVING_PATTERNS:
+        if pattern in name_lower or pattern in note_lower:
+            return True
+    return False
+
+
+def _extract_quantity(text):
+    """Extract leading quantity from text, return (Decimal, remaining_text) or (None, text)."""
+    rest = text.strip()
+
+    mixed_unicode = re.match(rf"^(\d+)\s*([{UNICODE_FRACTION_PATTERN}])", rest)
+    if mixed_unicode:
+        whole = int(mixed_unicode.group(1))
+        frac_val = UNICODE_FRACTIONS[mixed_unicode.group(2)]
+        return (Decimal(whole) + frac_val, rest[mixed_unicode.end():].strip())
+
+    unicode_frac = re.match(rf"^([{UNICODE_FRACTION_PATTERN}])", rest)
+    if unicode_frac:
+        return (UNICODE_FRACTIONS[unicode_frac.group(1)], rest[unicode_frac.end():].strip())
+
+    mixed_frac = re.match(r"^(\d+)\s*[- ]\s*(\d+)\s*/\s*(\d+)", rest)
+    if mixed_frac:
+        whole = int(mixed_frac.group(1))
+        num = int(mixed_frac.group(2))
+        den = int(mixed_frac.group(3))
+        return (Decimal(whole) + (Decimal(num) / Decimal(den)), rest[mixed_frac.end():].strip())
+
+    frac = re.match(r"^(\d+)\s*/\s*(\d+)", rest)
+    if frac:
+        num = int(frac.group(1))
+        den = int(frac.group(2))
+        return (Decimal(num) / Decimal(den), rest[frac.end():].strip())
+
+    dec = re.match(r"^(\d+(?:\.\d+)?)", rest)
+    if dec:
+        return (Decimal(dec.group(1)), rest[dec.end():].strip())
+
+    return (None, text)
+
+
+def parse_ingredient_line(line, ingredient_cache=None, normalization_cache=None):
     """Parse a single ingredient string into structured fields."""
     line = line.strip()
     if not line:
@@ -219,42 +300,46 @@ def parse_ingredient_line(line, ingredient_cache=None):
     quantity = Decimal("1.0")
     rest = line
 
-    mixed_unicode = re.match(rf"^(\d+)\s*([{UNICODE_FRACTION_PATTERN}])", rest)
-    if mixed_unicode:
-        whole = int(mixed_unicode.group(1))
-        frac_val = UNICODE_FRACTIONS[mixed_unicode.group(2)]
-        quantity = Decimal(whole) + frac_val
-        rest = rest[mixed_unicode.end():].strip()
-    else:
-        unicode_frac = re.match(rf"^([{UNICODE_FRACTION_PATTERN}])", rest)
-        if unicode_frac:
-            quantity = UNICODE_FRACTIONS[unicode_frac.group(1)]
-            rest = rest[unicode_frac.end():].strip()
+    parsed_quantity, rest = _extract_quantity(rest)
+    if parsed_quantity is not None:
+        quantity = parsed_quantity
+
+    if rest:
+        range_match = re.match(r"^[\-\u2013\u2014]\s*\d+\s*", rest)
+        if range_match:
+            rest = rest[range_match.end():]
         else:
-            mixed_frac = re.match(r"^(\d+)\s*[- ]\s*(\d+)\s*/\s*(\d+)", rest)
-            if mixed_frac:
-                whole = int(mixed_frac.group(1))
-                num = int(mixed_frac.group(2))
-                den = int(mixed_frac.group(3))
-                quantity = Decimal(whole) + (Decimal(num) / Decimal(den))
-                rest = rest[mixed_frac.end():].strip()
-            else:
-                frac = re.match(r"^(\d+)\s*/\s*(\d+)", rest)
-                if frac:
-                    num = int(frac.group(1))
-                    den = int(frac.group(2))
-                    quantity = Decimal(num) / Decimal(den)
-                    rest = rest[frac.end():].strip()
-                else:
-                    dec = re.match(r"^(\d+(?:\.\d+)?)", rest)
-                    if dec:
-                        quantity = Decimal(dec.group(1))
-                        rest = rest[dec.end():].strip()
+            to_range = re.match(r"^to\s+\d+\s*", rest)
+            if to_range:
+                rest = rest[to_range.end():]
 
     if rest.lower().startswith("of "):
         rest = rest[3:].strip()
     elif rest.lower().startswith("x ") or rest.lower().startswith("- "):
         rest = rest[2:].strip()
+        if rest:
+            x_quantity, x_rest = _extract_quantity(rest)
+            if x_quantity is not None:
+                x_words = x_rest.split()
+                container_follows = False
+                if len(x_words) >= 2:
+                    candidate = x_words[1].lower().rstrip(".")
+                    if candidate in CONTAINER_WORDS:
+                        container_follows = True
+                if quantity == Decimal("1.0") or not container_follows:
+                    quantity = x_quantity
+                    rest = x_rest
+                    range_match = re.match(r"^[\-\u2013\u2014]\s*\d+\s*", rest)
+                    if range_match:
+                        rest = rest[range_match.end():]
+                    if rest.lower().startswith("of "):
+                        rest = rest[3:].strip()
+
+    if rest:
+        re_qty, re_rest = _extract_quantity(rest)
+        if re_qty is not None:
+            quantity = re_qty
+            rest = re_rest
 
     note = ""
     paren_match = re.search(r"\(([^)]+)\)", rest)
@@ -276,35 +361,87 @@ def parse_ingredient_line(line, ingredient_cache=None):
         first_word = words[0].lower().rstrip(".")
         first_word_clean = re.sub(r"[^\w]", "", first_word)
 
-        if first_word in UNIT_MAPPING:
-            unit = UNIT_MAPPING[first_word]
-            name = " ".join(words[1:])
-        elif first_word_clean in UNIT_MAPPING:
-            unit = UNIT_MAPPING[first_word_clean]
-            name = " ".join(words[1:])
-        elif "/" in first_word:
-            slash_prefix = first_word.split("/")[0]
-            if slash_prefix in UNIT_MAPPING:
-                unit = UNIT_MAPPING[slash_prefix]
+        if first_word in UNIT_ADJECTIVES and len(words) > 1:
+            second_word = words[1].lower().rstrip(".")
+            second_word_clean = re.sub(r"[^\w]", "", second_word)
+            if second_word in UNIT_MAPPING:
+                unit = UNIT_MAPPING[second_word]
+                name = " ".join(words[2:])
+            elif second_word_clean in UNIT_MAPPING:
+                unit = UNIT_MAPPING[second_word_clean]
+                name = " ".join(words[2:])
+            elif "/" in second_word:
+                slash_prefix = second_word.split("/")[0]
+                if slash_prefix in UNIT_MAPPING:
+                    unit = UNIT_MAPPING[slash_prefix]
+                    name = " ".join(words[2:])
+
+        if name == rest:
+            if first_word in UNIT_MAPPING:
+                unit = UNIT_MAPPING[first_word]
                 name = " ".join(words[1:])
-            elif slash_prefix in NON_STANDARD_UNITS:
-                unit = Unit.ITEM
-                non_std = NON_STANDARD_UNITS[slash_prefix]
+            elif first_word_clean in UNIT_MAPPING:
+                unit = UNIT_MAPPING[first_word_clean]
                 name = " ".join(words[1:])
-                note = f"{non_std}, {note}" if note else non_std
-        elif first_word in NON_STANDARD_UNITS:
-            unit = Unit.ITEM
-            non_std = NON_STANDARD_UNITS[first_word]
-            name = " ".join(words[1:])
-            note = f"{non_std}, {note}" if note else non_std
-        elif first_word_clean in NON_STANDARD_UNITS:
-            unit = Unit.ITEM
-            non_std = NON_STANDARD_UNITS[first_word_clean]
-            name = " ".join(words[1:])
-            note = f"{non_std}, {note}" if note else non_std
+            elif first_word in ARTICLES and len(words) >= 2:
+                if len(words) == 2:
+                    name = words[1]
+                else:
+                    second_word = words[1].lower().rstrip(".")
+                    second_word_clean = re.sub(r"[^\w]", "", second_word)
+                    if second_word in UNIT_MAPPING:
+                        unit = UNIT_MAPPING[second_word]
+                        name = " ".join(words[2:])
+                    elif second_word_clean in UNIT_MAPPING:
+                        unit = UNIT_MAPPING[second_word_clean]
+                        name = " ".join(words[2:])
+                    elif "/" in second_word:
+                        slash_prefix = second_word.split("/")[0]
+                        if slash_prefix in UNIT_MAPPING:
+                            unit = UNIT_MAPPING[slash_prefix]
+                            name = " ".join(words[2:])
+                    else:
+                        name = " ".join(words[1:])
+            elif "/" in first_word:
+                slash_prefix = first_word.split("/")[0]
+                if slash_prefix in UNIT_MAPPING:
+                    unit = UNIT_MAPPING[slash_prefix]
+                    name = " ".join(words[1:])
+                name = " ".join(words[1:])
 
         if name.lower().startswith("of "):
             name = name[3:].strip()
+
+    if name:
+        _name = name
+        for sep in INSTRUCTION_SEPARATORS:
+            if sep in _name.lower():
+                idx = _name.lower().rfind(sep)
+                trailing = _name[idx:].strip()
+                trailing_words = set(re.findall(r'\w+', trailing.lower()))
+                if trailing_words & INSTRUCTION_TRAILING_WORDS:
+                    _name = _name[:idx].strip()
+                    if trailing:
+                        note = f"{note}, {trailing}" if note else trailing
+                    break
+        name = _name
+
+    if name.endswith(")") and "(" not in name:
+        name = name[:-1].strip()
+    if name.endswith("("):
+        name = name[:-1].strip()
+    if name.startswith(")") and "(" not in name:
+        name = name[1:].strip()
+    if note.endswith(")") and "(" not in note:
+        note = note[:-1].strip()
+    if note.endswith("("):
+        note = note[:-1].strip()
+
+    if _is_serving_instruction(name, note):
+        return None
+
+    if name:
+        name = normalise_ingredient_name(name, normalization_cache)
 
     if ingredient_cache is not None:
         category = _ingredient_category(name, ingredient_cache)
@@ -315,7 +452,7 @@ def parse_ingredient_line(line, ingredient_cache=None):
 
     return {
         "name": name,
-        "quantity": str(quantity),
+        "quantity": display_quantity(quantity),
         "unit": unit,
         "note": note,
         "category": category,
@@ -379,6 +516,110 @@ def _scraper_tag_list(scraper, *method_names):
     return sorted(tags)
 
 
+def _fallback_parse_ingredients(soup, ingredient_cache, normalization_cache):
+    """Extract ingredients from HTML soup when recipe-scrapers returns nothing."""
+    ingredients = []
+    text_lines = []
+
+    # Strategy 1: JSON-LD recipeIngredient
+    for script in soup.select("script[type=\"application/ld+json\"]"):
+        try:
+            data = json.loads(script.string)
+            if isinstance(data, dict):
+                ings = data.get("recipeIngredient") or []
+                if isinstance(ings, list) and ings:
+                    text_lines = ings
+                    break
+            elif isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        ings = item.get("recipeIngredient") or []
+                        if isinstance(ings, list) and ings:
+                            text_lines = ings
+                            break
+                if text_lines:
+                    break
+        except (json.JSONDecodeError, Exception):
+            continue
+
+    # Strategy 2: WPRM ingredient items (WordPress Recipe Maker plugin)
+    if not text_lines:
+        for li in soup.select(".wprm-recipe-ingredients-container li.wprm-recipe-ingredient, .wprm-recipe-ingredient"):
+            text = li.get_text(separator=" ", strip=True)
+            if text:
+                text_lines.append(text)
+
+    # Strategy 3: Generic li.ingredient or [class*=ingredient] li
+    if not text_lines:
+        for li in soup.select("li.ingredient, [class*=\"ingredient\"] li"):
+            text = li.get_text(separator=" ", strip=True)
+            if text:
+                text_lines.append(text)
+
+    for line in text_lines:
+        parsed = parse_ingredient_line(line, ingredient_cache, normalization_cache)
+        if parsed:
+            ingredients.append(parsed)
+
+    return ingredients
+
+
+def _fallback_parse_steps(soup):
+    """Extract steps from HTML soup when recipe-scrapers returns nothing."""
+    raw_steps = []
+
+    # Strategy 1: JSON-LD recipeInstructions
+    for script in soup.select("script[type=\"application/ld+json\"]"):
+        try:
+            data = json.loads(script.string)
+            items = None
+            if isinstance(data, dict):
+                items = data.get("recipeInstructions")
+            elif isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and "recipeInstructions" in item:
+                        items = item["recipeInstructions"]
+                        break
+            if isinstance(items, list):
+                for inst in items:
+                    if isinstance(inst, dict):
+                        text = inst.get("text") or inst.get("name") or ""
+                    elif isinstance(inst, str):
+                        text = inst
+                    else:
+                        continue
+                    text = str(text).strip()
+                    if text:
+                        raw_steps.append(text)
+                if raw_steps:
+                    break
+        except (json.JSONDecodeError, Exception):
+            continue
+
+    # Strategy 2: WPRM instruction items
+    if not raw_steps:
+        for li in soup.select(".wprm-recipe-instructions-container li, .wprm-recipe-instruction"):
+            text = li.get_text(separator=" ", strip=True)
+            if text:
+                raw_steps.append(text)
+
+    # Strategy 3: Common instruction list patterns
+    if not raw_steps:
+        for ol_class in ("recipe__instructions", "directions__list", "recipe-directions__list", "instructions", "steps"):
+            ol = soup.find("ol", class_=ol_class)
+            if ol:
+                raw_steps = [li.get_text(separator=" ", strip=True) for li in ol.find_all("li") if li.get_text(separator=" ", strip=True)]
+                break
+        if not raw_steps:
+            for ol in soup.find_all("ol"):
+                steps_from_ol = [li.get_text(strip=True) for li in ol.find_all("li") if li.get_text(strip=True)]
+                if len(steps_from_ol) >= 2:
+                    raw_steps = steps_from_ol
+                    break
+
+    return raw_steps
+
+
 def parse_recipe_url(url):
     """Scrape a recipe URL using recipe-scrapers."""
     scraper = scrape_me(url)
@@ -386,24 +627,61 @@ def parse_recipe_url(url):
     title = scraper.title()
     servings = parse_servings(scraper.yields())
 
-    instructions = scraper.instructions()
     raw_steps = []
-    if isinstance(instructions, list):
-        for item in instructions:
-            if isinstance(item, dict):
-                text = item.get("text", "").strip()
-            else:
-                text = str(item).strip()
-            if text:
-                raw_steps.append(text)
-    else:
-        raw_steps = [step.strip() for step in str(instructions or "").splitlines() if step.strip()]
+    try:
+        instructions = scraper.instructions()
+        if isinstance(instructions, list):
+            for item in instructions:
+                if isinstance(item, dict):
+                    text = item.get("text", "").strip()
+                else:
+                    text = str(item).strip()
+                if text:
+                    raw_steps.append(text)
+        else:
+            raw_steps = [step.strip() for step in str(instructions or "").splitlines() if step.strip()]
+    except Exception:
+        pass
 
     if not raw_steps:
         try:
             raw_steps = scraper.instructions_list()
         except Exception:
             pass
+
+    if not raw_steps:
+        try:
+            for ol_class in ("recipe__instructions", "directions__list", "recipe-directions__list", "instructions"):
+                ol = scraper.soup.find("ol", class_=ol_class)
+                if ol:
+                    raw_steps = [li.get_text(strip=True) for li in ol.find_all("li") if li.get_text(strip=True)]
+                    break
+            if not raw_steps:
+                for ol in scraper.soup.find_all("ol"):
+                    steps_from_ol = [li.get_text(strip=True) for li in ol.find_all("li") if li.get_text(strip=True)]
+                    if len(steps_from_ol) >= 2:
+                        raw_steps = steps_from_ol
+                        break
+        except Exception:
+            pass
+
+    if not raw_steps and hasattr(scraper, "soup"):
+        raw_steps = _fallback_parse_steps(scraper.soup)
+
+    if not raw_steps:
+        logger.warning("No steps extracted from %s", url)
+
+    split_steps = []
+    for step in raw_steps:
+        if len(step) > 300:
+            parts = re.split(r"(?:^|\s)(?=\d+[.)]\s)", step)
+            for part in parts:
+                stripped = part.strip()
+                if stripped:
+                    split_steps.append(stripped)
+        else:
+            split_steps.append(step)
+    raw_steps = split_steps
 
     steps = []
     for step in raw_steps:
@@ -415,6 +693,7 @@ def parse_recipe_url(url):
         )
 
     ingredient_cache = _load_ingredient_cache()
+    normalization_cache = load_normalization_cache()
     ingredients = []
     try:
         groups = scraper.ingredient_groups()
@@ -425,23 +704,37 @@ def parse_recipe_url(url):
         for group in groups:
             group_purpose = group.purpose.strip() if group.purpose else ""
             for line in group.ingredients:
-                parsed = parse_ingredient_line(line, ingredient_cache)
+                parsed = parse_ingredient_line(line, ingredient_cache, normalization_cache)
                 if parsed:
                     if group_purpose:
                         parsed["group_name"] = group_purpose
                     ingredients.append(parsed)
+        if not ingredients:
+            for line in scraper.ingredients():
+                parsed = parse_ingredient_line(line, ingredient_cache, normalization_cache)
+                if parsed:
+                    ingredients.append(parsed)
     else:
         for line in scraper.ingredients():
-            parsed = parse_ingredient_line(line, ingredient_cache)
+            parsed = parse_ingredient_line(line, ingredient_cache, normalization_cache)
             if parsed:
                 ingredients.append(parsed)
 
+    if not ingredients and hasattr(scraper, "soup"):
+        ingredients = _fallback_parse_ingredients(scraper.soup, ingredient_cache, normalization_cache)
+
+    if not ingredients:
+        logger.warning("No ingredients extracted from %s", url)
+
     tags = []
-    keywords = scraper.keywords()
-    if isinstance(keywords, list):
-        tags.extend(keywords)
-    elif isinstance(keywords, str):
-        tags.extend([tag.strip() for tag in keywords.split(",") if tag.strip()])
+    try:
+        keywords = scraper.keywords()
+        if isinstance(keywords, list):
+            tags.extend(keywords)
+        elif isinstance(keywords, str):
+            tags.extend([tag.strip() for tag in keywords.split(",") if tag.strip()])
+    except Exception:
+        pass
 
     category = scraper.category()
     if isinstance(category, str):
@@ -462,12 +755,6 @@ def parse_recipe_url(url):
             prep_minutes = total
 
     source_url = url
-    try:
-        author = scraper.author()
-        if author and isinstance(author, str) and author.strip():
-            source_url = f"By {author.strip()} - {url}"
-    except Exception:
-        pass
 
     return {
         "title": title,
@@ -516,6 +803,7 @@ def parse_recipe_text(text):
             skip_title_line = True
 
     ingredient_cache = _load_ingredient_cache()
+    normalization_cache = load_normalization_cache()
 
     for line in lines:
         if not line:
@@ -554,7 +842,7 @@ def parse_recipe_text(text):
             continue
 
         if state == 1:
-            parsed = parse_ingredient_line(line, ingredient_cache)
+            parsed = parse_ingredient_line(line, ingredient_cache, normalization_cache)
             if parsed:
                 ingredients.append(parsed)
         elif state == 2:
